@@ -100,7 +100,8 @@ class StatsViewModel(
                     it.copy(
                         modelUsageByDay = buildUsageByDay(records),
                         modelUsageByHour = buildUsageByHour(records),
-                        modelUsageDistribution = buildModelUsageDistribution(records)
+                        modelUsageDistribution = buildModelUsageDistribution(records),
+                        modelCallTrend = buildModelCallTrend(records)
                     )
                 }
             }
@@ -199,6 +200,17 @@ class StatsViewModel(
     }
 
     private fun buildModelUsageDistribution(records: List<ModelUsageEntity>): List<StackedUsageBucket> {
+        return buildModelBuckets(records, amountSelector = { it.usageAmount() })
+    }
+
+    private fun buildModelCallTrend(records: List<ModelUsageEntity>): List<StackedUsageBucket> {
+        return buildModelBuckets(records, amountSelector = { 1L })
+    }
+
+    private fun buildModelBuckets(
+        records: List<ModelUsageEntity>,
+        amountSelector: (ModelUsageEntity) -> Long
+    ): List<StackedUsageBucket> {
         val hourStarts = records
             .map { it.createdAt.toHourStartMillis() }
             .distinct()
@@ -208,7 +220,7 @@ class StatsViewModel(
         val recentRecords = records.filter { it.createdAt.toHourStartMillis() in hourStarts }
         val topModels = recentRecords
             .groupBy { it.modelId }
-            .mapValues { (_, items) -> items.sumOf { it.usageAmount() } }
+            .mapValues { (_, items) -> items.sumOf(amountSelector) }
             .toList()
             .sortedByDescending { it.second }
             .take(MAX_MODELS_IN_CHART)
@@ -221,7 +233,7 @@ class StatsViewModel(
                 .groupBy { record ->
                     if (record.modelId in topModels) record.modelId else "其他"
                 }
-                .mapValues { (_, items) -> items.sumOf { it.usageAmount() } }
+                .mapValues { (_, items) -> items.sumOf(amountSelector) }
             StackedUsageBucket(
                 label = distributionFormat().format(Date(start)),
                 segments = grouped
@@ -318,6 +330,7 @@ data class StatsUiState(
     val modelUsageByDay: List<UsageBucket> = emptyList(),
     val modelUsageByHour: List<UsageBucket> = emptyList(),
     val modelUsageDistribution: List<StackedUsageBucket> = emptyList(),
+    val modelCallTrend: List<StackedUsageBucket> = emptyList(),
     val networkStatus: NetworkStatus = NetworkStatus(false, "检测中")
 ) {
     val apiStatusLabel: String

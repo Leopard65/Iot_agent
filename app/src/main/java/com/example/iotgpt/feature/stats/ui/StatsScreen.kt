@@ -2,22 +2,31 @@ package com.example.iotgpt.feature.stats.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -25,6 +34,7 @@ import com.example.iotgpt.core.components.AppPage
 import com.example.iotgpt.core.components.AppSectionCard
 import com.example.iotgpt.core.components.StatusPill
 import com.example.iotgpt.core.components.StatusTone
+import com.example.iotgpt.core.database.dao.ModelUsageSummary
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -37,10 +47,11 @@ fun StatsScreen(
     viewModel: StatsViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    var chartMode by rememberSaveable { mutableStateOf(ModelChartMode.Consumption) }
 
     AppPage(
-        title = "数据中心",
-        subtitle = "会话、模型调用、智能体任务与网络状态总览",
+        title = "模型数据分析",
+        subtitle = "消耗分布、调用趋势与模型排行",
         trailing = {
             StatusPill(
                 text = if (uiState.networkStatus.isConnected) uiState.networkStatus.label else "无网络",
@@ -48,96 +59,15 @@ fun StatsScreen(
             )
         }
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            MetricCard("会话", uiState.totalConversations.toString(), Modifier.weight(1f))
-            MetricCard("消息", uiState.totalMessages.toString(), Modifier.weight(1f))
-            MetricCard("今日", uiState.todayMessages.toString(), Modifier.weight(1f))
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            MetricCard("用户", uiState.userMessages.toString(), Modifier.weight(1f))
-            MetricCard("AI", uiState.assistantMessages.toString(), Modifier.weight(1f))
-            MetricCard("调用", uiState.totalModelCalls.toString(), Modifier.weight(1f))
-        }
+        ModelAnalyticsPanel(
+            uiState = uiState,
+            selectedMode = chartMode,
+            onModeSelected = { chartMode = it }
+        )
 
         AppSectionCard(modifier = Modifier.fillMaxWidth()) {
             Text(
-                text = "对话条目占比",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            MessageRolePieChart(
-                userMessages = uiState.userMessages,
-                assistantMessages = uiState.assistantMessages
-            )
-        }
-
-        AppSectionCard(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                text = "最近 7 天消息趋势",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            val trend = uiState.messageTrend.ifEmpty {
-                listOf(DailyMessageCount("暂无", 0, 0f))
-            }
-            trend.forEach { item ->
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(item.label, style = MaterialTheme.typography.labelMedium)
-                        Text("${item.count} 条", style = MaterialTheme.typography.labelMedium)
-                    }
-                    LinearProgressIndicator(
-                        progress = { item.progress },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            }
-        }
-
-        AppSectionCard(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                text = "模型使用统计",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatusPill(
-                    uiState.apiStatusLabel,
-                    tone = if (uiState.lastApiError == null) StatusTone.Primary else StatusTone.Neutral
-                )
-                StatusPill("Token/字符 ${uiState.totalTokens}")
-            }
-            ModelConfigSummary(uiState)
-            Text("最近请求：${formatTime(uiState.lastModelRequestAt)}")
-            ModelUsageDistributionChart(uiState.modelUsageDistribution)
-            uiState.lastApiError?.let { error ->
-                Text(
-                    text = "最近失败：$error",
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
-            if (uiState.modelUsage.isEmpty()) {
-                Text(
-                    text = "暂无模型调用记录",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
-        AppSectionCard(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                text = "智能体与网络状态",
+                text = "链路状态",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
@@ -149,7 +79,96 @@ fun StatsScreen(
                 StatusPill("智能体任务 ${uiState.agentTaskCount}")
                 StatusPill("已完成 ${uiState.completedAgentTasks}")
             }
-            Text("连接类型：${uiState.networkStatus.label}")
+            Text(
+                text = "最近请求：${formatTime(uiState.lastModelRequestAt)} · 当前模型：${uiState.activeModel}",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            uiState.lastApiError?.let { error ->
+                Text(
+                    text = "最近失败：$error",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+    }
+}
+
+private enum class ModelChartMode(
+    val label: String,
+    val title: String
+) {
+    Consumption("消耗分布", "模型消耗分布"),
+    Trend("调用趋势", "模型调用趋势"),
+    CountDistribution("次数分布", "模型调用次数占比"),
+    Ranking("次数排行", "模型调用次数排行")
+}
+
+@Composable
+private fun ModelAnalyticsPanel(
+    uiState: StatsUiState,
+    selectedMode: ModelChartMode,
+    onModeSelected: (ModelChartMode) -> Unit
+) {
+    AppSectionCard(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = selectedMode.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = "总调用 ${uiState.totalModelCalls} 次 · Token/字符 ${formatAmount(uiState.totalTokens)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            StatusPill(
+                uiState.apiStatusLabel,
+                tone = if (uiState.lastApiError == null) StatusTone.Primary else StatusTone.Neutral
+            )
+        }
+
+        ChartModeSelector(selectedMode, onModeSelected)
+
+        if (uiState.modelUsage.isEmpty()) {
+            EmptyChartState()
+        } else {
+            when (selectedMode) {
+                ModelChartMode.Consumption -> ModelUsageDistributionChart(uiState.modelUsageDistribution)
+                ModelChartMode.Trend -> ModelCallTrendChart(uiState.modelCallTrend)
+                ModelChartMode.CountDistribution -> ModelCallCountDonutChart(
+                    segments = uiState.modelUsage.map {
+                        UsageSegment(modelId = it.modelId, amount = it.callCount.toLong())
+                    }
+                )
+                ModelChartMode.Ranking -> ModelCallRankingChart(uiState.modelUsage)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChartModeSelector(
+    selectedMode: ModelChartMode,
+    onModeSelected: (ModelChartMode) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        ModelChartMode.entries.chunked(2).forEach { rowModes ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                rowModes.forEach { mode ->
+                    FilterChip(
+                        selected = selectedMode == mode,
+                        onClick = { onModeSelected(mode) },
+                        label = { Text(mode.label) }
+                    )
+                }
+            }
         }
     }
 }
@@ -268,14 +287,7 @@ private fun UsageBarChart(
 private fun ModelUsageDistributionChart(
     buckets: List<StackedUsageBucket>
 ) {
-    val palette = listOf(
-        Color(0xFF35527D),
-        Color(0xFFFFC107),
-        Color(0xFF90DCEB),
-        Color(0xFF6C8B3F),
-        Color(0xFFC46A4A),
-        Color(0xFF7B61A8)
-    )
+    val palette = chartPalette()
     val data = buckets.ifEmpty {
         listOf(StackedUsageBucket("暂无", emptyList()))
     }
@@ -287,7 +299,7 @@ private fun ModelUsageDistributionChart(
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
-            text = "模型消耗分布",
+            text = "最近有调用记录的时间段",
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold
         )
@@ -368,6 +380,290 @@ private fun ModelUsageDistributionChart(
 }
 
 @Composable
+private fun ModelCallTrendChart(
+    buckets: List<StackedUsageBucket>
+) {
+    val palette = chartPalette()
+    val data = buckets.ifEmpty { listOf(StackedUsageBucket("暂无", emptyList())) }
+    val modelIds = data
+        .flatMap { it.segments.map { segment -> segment.modelId } }
+        .distinct()
+    val maxValue = data
+        .flatMap { it.segments }
+        .maxOfOrNull { it.amount }
+        ?.coerceAtLeast(1L)
+        ?: 1L
+    val total = data.sumOf { it.total }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = "按时间分模型调用次数",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold
+        )
+        Text(
+            text = "总计：$total 次",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(220.dp)
+        ) {
+            val plotLeft = 10f
+            val plotTop = 12f
+            val plotRight = size.width - 8f
+            val plotBottom = size.height - 18f
+            val plotHeight = plotBottom - plotTop
+            val plotWidth = plotRight - plotLeft
+            val gridColor = Color(0xFFE7EAF0)
+
+            repeat(5) { index ->
+                val y = plotTop + plotHeight * index / 4f
+                drawLine(
+                    color = gridColor,
+                    start = Offset(plotLeft, y),
+                    end = Offset(plotRight, y),
+                    strokeWidth = 1f
+                )
+            }
+
+            val slotWidth = if (data.size <= 1) plotWidth else plotWidth / (data.size - 1)
+            modelIds.forEachIndexed { modelIndex, modelId ->
+                val color = palette[modelIndex % palette.size]
+                val path = Path()
+                data.forEachIndexed { index, bucket ->
+                    val amount = bucket.segments.firstOrNull { it.modelId == modelId }?.amount ?: 0L
+                    val x = if (data.size <= 1) center.x else plotLeft + slotWidth * index
+                    val y = plotBottom - plotHeight * (amount.toFloat() / maxValue.toFloat())
+                    if (index == 0) {
+                        path.moveTo(x, y)
+                    } else {
+                        path.lineTo(x, y)
+                    }
+                    if (amount > 0L) {
+                        drawCircle(color = color, radius = 3.2.dp.toPx(), center = Offset(x, y))
+                    }
+                }
+                drawPath(
+                    path = path,
+                    color = color,
+                    style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
+                )
+            }
+        }
+        TimeAxisLabels(data)
+        ChartLegend(modelIds = modelIds, palette = palette)
+    }
+}
+
+@Composable
+private fun ModelCallCountDonutChart(
+    segments: List<UsageSegment>
+) {
+    val palette = chartPalette()
+    val data = segments.filter { it.amount > 0L }
+    val total = data.sumOf { it.amount }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(18.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier.size(180.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Canvas(modifier = Modifier.size(180.dp)) {
+                val strokeWidth = 24.dp.toPx()
+                if (total <= 0L) {
+                    drawCircle(
+                        color = Color(0xFFE7EAF0),
+                        radius = size.minDimension / 2f - strokeWidth,
+                        style = Stroke(width = strokeWidth)
+                    )
+                } else {
+                    var start = -90f
+                    data.forEachIndexed { index, item ->
+                        val sweep = item.amount.toFloat() / total.toFloat() * 360f
+                        drawArc(
+                            color = palette[index % palette.size],
+                            startAngle = start,
+                            sweepAngle = sweep,
+                            useCenter = false,
+                            style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                        )
+                        start += sweep
+                    }
+                }
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = "TOTAL",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = total.toString(),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            data.forEachIndexed { index, item ->
+                val percent = if (total == 0L) 0 else item.amount * 100 / total
+                LegendValueRow(
+                    color = palette[index % palette.size],
+                    label = item.modelId,
+                    value = "${item.amount} 次 · $percent%"
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModelCallRankingChart(
+    usage: List<ModelUsageSummary>
+) {
+    val palette = chartPalette()
+    val data = usage.sortedByDescending { it.callCount }.take(8)
+    val max = data.maxOfOrNull { it.callCount }?.coerceAtLeast(1) ?: 1
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        data.forEachIndexed { index, item ->
+            val progress = item.callCount.toFloat() / max.toFloat()
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = item.modelId,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1
+                    )
+                    Text(
+                        text = "${item.callCount} 次",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Canvas(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(18.dp)
+                ) {
+                    drawRoundRect(
+                        color = Color(0xFFE7EAF0),
+                        size = Size(size.width, size.height),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(8.dp.toPx(), 8.dp.toPx())
+                    )
+                    drawRoundRect(
+                        color = palette[index % palette.size],
+                        size = Size(size.width * progress, size.height),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(8.dp.toPx(), 8.dp.toPx())
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyChartState() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(180.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "暂无模型调用记录",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = "完成一次对话后这里会显示图表",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun TimeAxisLabels(data: List<StackedUsageBucket>) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        data.forEachIndexed { index, bucket ->
+            Text(
+                text = if (index % 2 == 0 || data.size <= 5) bucket.label else "",
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
+private fun ChartLegend(
+    modelIds: List<String>,
+    palette: List<Color>
+) {
+    if (modelIds.isEmpty()) return
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        modelIds.chunked(2).forEach { rowModels ->
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                rowModels.forEach { modelId ->
+                    LegendItem(
+                        color = palette[modelIds.indexOf(modelId) % palette.size],
+                        label = modelId
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LegendValueRow(
+    color: Color,
+    label: String,
+    value: String
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Canvas(modifier = Modifier.size(10.dp)) {
+            drawCircle(color = color)
+        }
+        Text(
+            text = label,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
 private fun LegendItem(
     color: Color,
     label: String
@@ -440,4 +736,15 @@ private fun formatAmount(value: Long): String {
         value >= 10_000 -> "%.1f万".format(value / 10_000.0)
         else -> value.toString()
     }
+}
+
+private fun chartPalette(): List<Color> {
+    return listOf(
+        Color(0xFF35527D),
+        Color(0xFFFFC107),
+        Color(0xFF90DCEB),
+        Color(0xFF6C8B3F),
+        Color(0xFFC46A4A),
+        Color(0xFF7B61A8)
+    )
 }
