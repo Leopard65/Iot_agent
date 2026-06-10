@@ -33,6 +33,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.example.iotgpt.feature.agent.ui.AgentScreen
 import com.example.iotgpt.feature.chat.ui.ChatScreen
 import com.example.iotgpt.feature.settings.ui.SettingsScreen
 import com.example.iotgpt.feature.stats.ui.StatsScreen
@@ -117,6 +118,9 @@ fun AppNavigation() {
             composable(MainRoute.Stats.route) {
                 StatsScreen()
             }
+            composable(MainRoute.Agent.route) {
+                AgentScreen()
+            }
             composable(MainRoute.Settings.route) {
                 SettingsScreen()
             }
@@ -143,6 +147,7 @@ private fun BusinessNavIcon(
             when (route) {
                 MainRoute.Chat -> drawConsultingIcon(accent)
                 MainRoute.Stats -> drawAnalyticsIcon(accent, selected)
+                MainRoute.Agent -> drawAgentChipIcon(accent, selected)
                 MainRoute.Settings -> drawControlDialIcon(accent, selected)
             }
         }

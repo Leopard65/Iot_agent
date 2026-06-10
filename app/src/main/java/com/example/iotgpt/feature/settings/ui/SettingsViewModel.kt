@@ -64,6 +64,26 @@ class SettingsViewModel(
                             activeProfile.supportsVision
                         } else {
                             state.supportsVision
+                        },
+                        supportsReasoning = if (shouldRefreshEditor) {
+                            activeProfile.supportsReasoning
+                        } else {
+                            state.supportsReasoning
+                        },
+                        reasoningEnabled = if (shouldRefreshEditor) {
+                            activeProfile.reasoningEnabled
+                        } else {
+                            state.reasoningEnabled
+                        },
+                        supportsAudioTranscription = if (shouldRefreshEditor) {
+                            activeProfile.supportsAudioTranscription
+                        } else {
+                            state.supportsAudioTranscription
+                        },
+                        transcriptionModel = if (shouldRefreshEditor) {
+                            activeProfile.transcriptionModel
+                        } else {
+                            state.transcriptionModel
                         }
                     )
                 }
@@ -95,6 +115,43 @@ class SettingsViewModel(
         _uiState.update { it.copy(supportsVision = value, statusMessage = null) }
     }
 
+    fun updateSupportsReasoning(value: Boolean) {
+        _uiState.update {
+            it.copy(
+                supportsReasoning = value,
+                reasoningEnabled = if (value) it.reasoningEnabled else false,
+                statusMessage = null
+            )
+        }
+    }
+
+    fun updateReasoningEnabled(value: Boolean) {
+        _uiState.update {
+            it.copy(
+                reasoningEnabled = it.supportsReasoning && value,
+                statusMessage = null
+            )
+        }
+    }
+
+    fun updateSupportsAudioTranscription(value: Boolean) {
+        _uiState.update {
+            it.copy(
+                supportsAudioTranscription = value,
+                transcriptionModel = if (value) {
+                    it.transcriptionModel.ifBlank { SettingsStore.DEFAULT_TRANSCRIPTION_MODEL }
+                } else {
+                    it.transcriptionModel
+                },
+                statusMessage = null
+            )
+        }
+    }
+
+    fun updateTranscriptionModel(value: String) {
+        _uiState.update { it.copy(transcriptionModel = value, statusMessage = null) }
+    }
+
     fun applyPreset(
         name: String,
         provider: String,
@@ -108,6 +165,10 @@ class SettingsViewModel(
                 baseUrl = baseUrl,
                 model = model,
                 supportsVision = false,
+                supportsReasoning = inferReasoningSupport(provider, model),
+                reasoningEnabled = false,
+                supportsAudioTranscription = inferAudioTranscriptionSupport(provider, baseUrl),
+                transcriptionModel = SettingsStore.DEFAULT_TRANSCRIPTION_MODEL,
                 statusMessage = null
             )
         }
@@ -124,6 +185,10 @@ class SettingsViewModel(
                 apiKey = profile.apiKey,
                 model = profile.model,
                 supportsVision = profile.supportsVision,
+                supportsReasoning = profile.supportsReasoning,
+                reasoningEnabled = profile.reasoningEnabled,
+                supportsAudioTranscription = profile.supportsAudioTranscription,
+                transcriptionModel = profile.transcriptionModel,
                 statusMessage = "正在编辑 ${profile.name}"
             )
         }
@@ -139,7 +204,31 @@ class SettingsViewModel(
                 apiKey = "",
                 model = "",
                 supportsVision = false,
+                supportsReasoning = false,
+                reasoningEnabled = false,
+                supportsAudioTranscription = false,
+                transcriptionModel = SettingsStore.DEFAULT_TRANSCRIPTION_MODEL,
                 statusMessage = "正在新建模型配置"
+            )
+        }
+    }
+
+    fun duplicateActiveProfile() {
+        val active = _uiState.value.activeProfile ?: return startNewProfile()
+        _uiState.update {
+            it.copy(
+                editingProfileId = null,
+                profileName = "${active.name} 副本",
+                provider = active.provider,
+                baseUrl = active.baseUrl,
+                apiKey = active.apiKey,
+                model = active.model,
+                supportsVision = active.supportsVision,
+                supportsReasoning = active.supportsReasoning,
+                reasoningEnabled = active.reasoningEnabled,
+                supportsAudioTranscription = active.supportsAudioTranscription,
+                transcriptionModel = active.transcriptionModel,
+                statusMessage = "已复制当前配置，修改模型名后保存即可"
             )
         }
     }
@@ -201,6 +290,9 @@ class SettingsViewModel(
                 require(state.profileName.isNotBlank()) { "请填写配置名称" }
                 require(state.baseUrl.isNotBlank()) { "请填写 Base URL" }
                 require(state.model.isNotBlank()) { "请填写模型名称" }
+                if (state.supportsAudioTranscription) {
+                    require(state.transcriptionModel.isNotBlank()) { "请填写语音转写模型名称" }
+                }
                 val profile = ModelProfile(
                     id = state.editingProfileId ?: "profile-${UUID.randomUUID()}",
                     name = state.profileName,
@@ -208,7 +300,11 @@ class SettingsViewModel(
                     baseUrl = state.baseUrl,
                     apiKey = state.apiKey,
                     model = state.model,
-                    supportsVision = state.supportsVision
+                    supportsVision = state.supportsVision,
+                    supportsReasoning = state.supportsReasoning,
+                    reasoningEnabled = state.supportsReasoning && state.reasoningEnabled,
+                    supportsAudioTranscription = state.supportsAudioTranscription,
+                    transcriptionModel = state.transcriptionModel
                 )
                 settingsStore.upsertModelProfile(profile, activate = true)
             }.onSuccess {
@@ -331,6 +427,8 @@ class SettingsViewModel(
                         appendLine(
                             "- ${profile.name} / ${profile.provider} / ${profile.model} / " +
                                 "vision=${profile.supportsVision} / key=${profile.apiKey.isNotBlank()}"
+                                + " / reasoning=${profile.supportsReasoning && profile.reasoningEnabled}"
+                                + " / transcription=${profile.supportsAudioTranscription}"
                         )
                     }
                     appendLine("Theme: ${_uiState.value.themeMode.label}")
@@ -360,7 +458,10 @@ class SettingsViewModel(
             baseUrl = baseUrl,
             apiKey = apiKey,
             model = model,
-            supportsVision = supportsVision
+            supportsVision = supportsVision,
+            reasoningEnabled = supportsReasoning && reasoningEnabled,
+            supportsAudioTranscription = supportsAudioTranscription,
+            transcriptionModel = transcriptionModel.ifBlank { SettingsStore.DEFAULT_TRANSCRIPTION_MODEL }
         )
     }
 
@@ -369,8 +470,22 @@ class SettingsViewModel(
             baseUrl = baseUrl,
             apiKey = apiKey,
             model = model,
-            supportsVision = supportsVision
+            supportsVision = supportsVision,
+            reasoningEnabled = supportsReasoning && reasoningEnabled,
+            supportsAudioTranscription = supportsAudioTranscription,
+            transcriptionModel = transcriptionModel.ifBlank { SettingsStore.DEFAULT_TRANSCRIPTION_MODEL }
         )
+    }
+
+    private fun inferReasoningSupport(provider: String, model: String): Boolean {
+        val marker = "$provider $model".lowercase()
+        return listOf("deepseek", "reasoner", "qwen", "mimo", "thinking", "reasoning")
+            .any { marker.contains(it) }
+    }
+
+    private fun inferAudioTranscriptionSupport(provider: String, baseUrl: String): Boolean {
+        val marker = "$provider $baseUrl".lowercase()
+        return listOf("openai", "whisper").any { marker.contains(it) }
     }
 
     private fun readVersionName(): String {
@@ -393,6 +508,10 @@ data class SettingsUiState(
     val apiKey: String = "",
     val model: String = SettingsStore.DEFAULT_MODEL,
     val supportsVision: Boolean = false,
+    val supportsReasoning: Boolean = false,
+    val reasoningEnabled: Boolean = false,
+    val supportsAudioTranscription: Boolean = false,
+    val transcriptionModel: String = SettingsStore.DEFAULT_TRANSCRIPTION_MODEL,
     val themeMode: ThemeMode = ThemeMode.System,
     val isSaving: Boolean = false,
     val isTesting: Boolean = false,

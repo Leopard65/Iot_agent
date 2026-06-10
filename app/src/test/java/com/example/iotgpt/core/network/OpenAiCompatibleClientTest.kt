@@ -1,6 +1,7 @@
 package com.example.iotgpt.core.network
 
 import com.example.iotgpt.core.preferences.LlmSettings
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -118,6 +119,58 @@ class OpenAiCompatibleClientTest {
     }
 
     @Test
+    fun sendsReasoningParametersWhenThinkingIsEnabled() = runBlocking {
+        server.enqueue(chatResponse())
+
+        client.createChatCompletion(
+            settings = settings(
+                baseUrl = server.url("/v1").toString(),
+                reasoningEnabled = true
+            ),
+            messages = listOf(LlmChatMessage(role = "user", content = "think"))
+        )
+
+        val body = JSONObject(server.takeRequest().body.readUtf8())
+        assertEquals(true, body.getBoolean("enable_thinking"))
+        assertEquals("enabled", body.getJSONObject("thinking").getString("type"))
+    }
+
+    @Test
+    fun sendsAudioTranscriptionMultipartRequest() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"text":"录音转写结果"}""")
+        )
+
+        val transcript = client.transcribeAudio(
+            settings = settings(
+                baseUrl = server.url("/compatible-mode").toString(),
+                supportsAudioTranscription = true,
+                transcriptionModel = "whisper-1"
+            ),
+            audio = LlmAudioInput(
+                fileName = "recording.m4a",
+                mimeType = "audio/mp4",
+                bytes = byteArrayOf(1, 2, 3)
+            )
+        )
+
+        assertEquals("录音转写结果", transcript)
+
+        val request = server.takeRequest()
+        assertEquals("/compatible-mode/v1/audio/transcriptions", request.path)
+        assertEquals("Bearer test-key", request.getHeader("Authorization"))
+        assertTrue(request.getHeader("Content-Type").orEmpty().startsWith("multipart/form-data"))
+
+        val body = request.body.readUtf8()
+        assertTrue(body.contains("name=\"model\""))
+        assertTrue(body.contains("whisper-1"))
+        assertTrue(body.contains("name=\"file\"; filename=\"recording.m4a\""))
+    }
+
+    @Test
     fun exposesReadableApiErrorMessage() = runBlocking {
         server.enqueue(
             MockResponse()
@@ -145,12 +198,55 @@ class OpenAiCompatibleClientTest {
         assertEquals("API 请求失败(401)：bad key", error?.message)
     }
 
-    private fun settings(baseUrl: String): LlmSettings {
+    @Test
+    fun streamsSseChunksAndRequestsStreamingResponse() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "text/event-stream")
+                .setBody(
+                    """
+                    data: {"choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+
+                    data: {"choices":[{"index":0,"delta":{"content":"你"},"finish_reason":null}]}
+
+                    data: {"choices":[{"index":0,"delta":{"content":"好"},"finish_reason":"stop"}],"usage":{"prompt_tokens":8,"completion_tokens":2,"total_tokens":10}}
+
+                    data: [DONE]
+                    """.trimIndent()
+                )
+        )
+
+        val chunks = client.streamChatCompletion(
+            settings = settings(baseUrl = server.url("/v1").toString()),
+            messages = listOf(LlmChatMessage(role = "user", content = "hello"))
+        ).toList()
+
+        assertEquals("你好", chunks.joinToString(separator = "") { it.delta })
+        assertEquals(8, chunks.last { it.promptTokens != null }.promptTokens)
+        assertEquals(2, chunks.last { it.completionTokens != null }.completionTokens)
+        assertEquals(10, chunks.last { it.totalTokens != null }.totalTokens)
+
+        val request = server.takeRequest()
+        val body = JSONObject(request.body.readUtf8())
+        assertEquals(true, body.getBoolean("stream"))
+        assertEquals("/v1/chat/completions", request.path)
+    }
+
+    private fun settings(
+        baseUrl: String,
+        reasoningEnabled: Boolean = false,
+        supportsAudioTranscription: Boolean = false,
+        transcriptionModel: String = "whisper-1"
+    ): LlmSettings {
         return LlmSettings(
             baseUrl = baseUrl,
             apiKey = "test-key",
             model = "test-model",
-            supportsVision = true
+            supportsVision = true,
+            reasoningEnabled = reasoningEnabled,
+            supportsAudioTranscription = supportsAudioTranscription,
+            transcriptionModel = transcriptionModel
         )
     }
 

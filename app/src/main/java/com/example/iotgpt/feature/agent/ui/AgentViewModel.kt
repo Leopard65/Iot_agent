@@ -3,6 +3,7 @@ package com.example.iotgpt.feature.agent.ui
 import android.app.Application
 import android.app.SearchManager
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.telephony.SmsManager
@@ -232,6 +233,29 @@ class AgentViewModel(
             }
             listOf("系统设置", "打开设置", "设置").any { lower.contains(it) } -> {
                 Intent(Settings.ACTION_SETTINGS)
+            }
+            listOf("拨号", "打电话", "拨打", "call", "tel:").any { lower.contains(it) } -> {
+                val phone = AppLeapCommandResolver.extractPhoneNumber(command)
+                if (phone == null) {
+                    Intent(Intent.ACTION_DIAL)
+                } else {
+                    Intent(Intent.ACTION_DIAL, "tel:$phone".toUri())
+                }
+            }
+            listOf("应用市场", "应用商店", "market", "store", "安装").any { lower.contains(it) } -> {
+                val target = AppLeapCommandResolver.extractMarketTarget(command)
+                    ?: throw IllegalArgumentException("未识别到要查找的应用")
+                val uri = if (AppLeapCommandResolver.isPackageName(target)) {
+                    "market://details?id=$target"
+                } else {
+                    "market://search?q=${Uri.encode(target)}"
+                }
+                Intent(Intent.ACTION_VIEW, uri.toUri())
+            }
+            listOf("导航", "navigate", "地图导航").any { lower.contains(it) } -> {
+                val query = AppLeapCommandResolver.extractMapQuery(command)
+                    ?: throw IllegalArgumentException("未识别到导航目的地")
+                Intent(Intent.ACTION_VIEW, "geo:0,0?q=${Uri.encode(query)}".toUri())
             }
             listOf("搜索", "search", "浏览器", "browser").any { lower.contains(it) } -> {
                 Intent(Intent.ACTION_WEB_SEARCH)

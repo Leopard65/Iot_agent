@@ -6,6 +6,7 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -13,7 +14,16 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
+import com.example.iotgpt.core.preferences.ModelProfile
+import com.example.iotgpt.core.preferences.SettingsStore
 import com.example.iotgpt.core.testing.AppTestTags
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.runBlocking
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -177,6 +187,79 @@ class ChatClawInstrumentedTest {
     }
 
     @Test
+    fun recordingAttachmentSendsThroughMockTranscriptionAndChatService() {
+        grantPermission(Manifest.permission.RECORD_AUDIO)
+        val server = MockWebServer()
+        server.start()
+        try {
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setHeader("Content-Type", "application/json")
+                    .setBody("""{"text":"模拟转写：温度传感器读数异常"}""")
+            )
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setHeader("Content-Type", "text/event-stream")
+                    .setBody(
+                        """
+                        data: {"choices":[{"delta":{"content":"已收到录音转写"},"finish_reason":"stop"}],"usage":{"prompt_tokens":12,"completion_tokens":6,"total_tokens":18}}
+
+                        data: [DONE]
+                        """.trimIndent()
+                    )
+            )
+            configureMockModel(server.url("/").toString())
+            completeOnboardingIfNeeded()
+            composeRule.onAllNodesWithText("新建", useUnmergedTree = true)
+                .onFirst()
+                .performClick()
+            composeRule.waitForIdle()
+
+            composeRule.onNodeWithTag(AppTestTags.CHAT_ATTACH_MENU, useUnmergedTree = true)
+                .performClick()
+            composeRule.onNodeWithText("录音", useUnmergedTree = true)
+                .performClick()
+            composeRule.onNodeWithTag(AppTestTags.CHAT_RECORDING_START, useUnmergedTree = true)
+                .performClick()
+
+            composeRule.waitUntil(timeoutMillis = 5_000) {
+                composeRule.onAllNodesWithText(
+                    text = "REC",
+                    useUnmergedTree = true
+                ).fetchSemanticsNodes().isNotEmpty()
+            }
+            Thread.sleep(1_200)
+            composeRule.onNodeWithTag(AppTestTags.CHAT_RECORDING_STOP_KEEP, useUnmergedTree = true)
+                .performClick()
+            composeRule.waitUntil(timeoutMillis = 5_000) {
+                hasNodeWithTag(AppTestTags.CHAT_PENDING_ATTACHMENT)
+            }
+            composeRule.onNodeWithTag(AppTestTags.CHAT_SEND, useUnmergedTree = true)
+                .performClick()
+
+            composeRule.waitUntil(timeoutMillis = 10_000) {
+                composeRule.onAllNodesWithText(
+                    text = "已收到录音转写",
+                    substring = true,
+                    useUnmergedTree = true
+                ).fetchSemanticsNodes().isNotEmpty()
+            }
+
+            val transcriptionRequest = server.takeRequest(2, TimeUnit.SECONDS)
+            val chatRequest = server.takeRequest(2, TimeUnit.SECONDS)
+            assertNotNull(transcriptionRequest)
+            assertNotNull(chatRequest)
+            assertEquals("/v1/audio/transcriptions", transcriptionRequest?.path)
+            assertEquals("/v1/chat/completions", chatRequest?.path)
+            assertTrue(chatRequest?.body?.readUtf8().orEmpty().contains("模拟转写"))
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
     fun documentPickerCancelReturnsToChatWithMessage() {
         completeOnboardingIfNeeded()
 
@@ -256,6 +339,25 @@ class ChatClawInstrumentedTest {
 
     private fun grantPermission(permission: String) {
         executeShellCommand("pm grant ${targetPackageName()} $permission")
+    }
+
+    private fun configureMockModel(baseUrl: String) {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        runBlocking {
+            SettingsStore(context).upsertModelProfile(
+                ModelProfile(
+                    id = "instrumented-mock-${System.nanoTime()}",
+                    name = "Instrumented Mock",
+                    provider = "Mock",
+                    baseUrl = baseUrl,
+                    apiKey = "test-key",
+                    model = "mock-chat",
+                    supportsAudioTranscription = true,
+                    transcriptionModel = "whisper-1"
+                ),
+                activate = true
+            )
+        }
     }
 
     private fun revokePermission(permission: String) {

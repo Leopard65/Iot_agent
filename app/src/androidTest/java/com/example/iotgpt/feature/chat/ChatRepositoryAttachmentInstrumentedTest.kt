@@ -8,6 +8,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.example.iotgpt.core.database.AppDatabase
 import com.example.iotgpt.core.network.LlmApiService
+import com.example.iotgpt.core.network.LlmAudioInput
 import com.example.iotgpt.core.network.LlmChatMessage
 import com.example.iotgpt.core.network.LlmChatResult
 import com.example.iotgpt.core.preferences.LlmSettings
@@ -71,6 +72,67 @@ class ChatRepositoryAttachmentInstrumentedTest {
     }
 
     @Test
+    fun audioAttachmentWithTranscriptionAddsTranscriptToContext() = runBlocking {
+        val harness = newHarness(
+            supportsVision = false,
+            supportsAudioTranscription = true
+        )
+        try {
+            val audioUri = createTinyAudio(harness.context)
+            harness.fake.transcriptionResult = "实验录音：温度传感器读数异常。"
+
+            harness.repository.sendAttachmentMessage(
+                conversationId = null,
+                content = "用户上传录音：recording.m4a，大小 12.0 KB，类型 audio/mp4。",
+                attachmentJson = attachmentJson(
+                    type = "audio",
+                    uri = audioUri.toString(),
+                    displayName = "recording.m4a",
+                    mimeType = "audio/mp4"
+                )
+            )
+
+            val userMessage = harness.fake.lastUserMessage()
+            assertEquals(1, harness.fake.audioCalls.size)
+            assertTrue(userMessage.content.contains("录音转写文本"))
+            assertTrue(userMessage.content.contains("温度传感器读数异常"))
+        } finally {
+            harness.close()
+        }
+    }
+
+    @Test
+    fun audioTranscriptionIsCachedForRegeneration() = runBlocking {
+        val harness = newHarness(
+            supportsVision = false,
+            supportsAudioTranscription = true
+        )
+        try {
+            val audioUri = createTinyAudio(harness.context)
+            harness.fake.transcriptionResult = "缓存转写：湿度超过阈值。"
+
+            val conversationId = harness.repository.sendAttachmentMessage(
+                conversationId = null,
+                content = "用户上传录音：recording.m4a，大小 12.0 KB，类型 audio/mp4。",
+                attachmentJson = attachmentJson(
+                    type = "audio",
+                    uri = audioUri.toString(),
+                    displayName = "recording.m4a",
+                    mimeType = "audio/mp4"
+                )
+            )
+
+            harness.repository.regenerateLastAssistant(conversationId)
+
+            assertEquals(1, harness.fake.audioCalls.size)
+            val userMessage = harness.fake.lastUserMessage()
+            assertTrue(userMessage.content.contains("缓存转写"))
+        } finally {
+            harness.close()
+        }
+    }
+
+    @Test
     fun imageAttachmentWithoutVisionAddsTextFallbackHint() = runBlocking {
         val harness = newHarness(supportsVision = false)
         try {
@@ -118,7 +180,10 @@ class ChatRepositoryAttachmentInstrumentedTest {
         }
     }
 
-    private suspend fun newHarness(supportsVision: Boolean): RepositoryHarness {
+    private suspend fun newHarness(
+        supportsVision: Boolean,
+        supportsAudioTranscription: Boolean = false
+    ): RepositoryHarness {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
             .allowMainThreadQueries()
@@ -133,7 +198,9 @@ class ChatRepositoryAttachmentInstrumentedTest {
                 baseUrl = "https://example.invalid",
                 apiKey = "test-key",
                 model = "test-model",
-                supportsVision = supportsVision
+                supportsVision = supportsVision,
+                supportsAudioTranscription = supportsAudioTranscription,
+                transcriptionModel = "whisper-1"
             ),
             activate = true
         )
@@ -184,6 +251,12 @@ class ChatRepositoryAttachmentInstrumentedTest {
         return Uri.fromFile(file)
     }
 
+    private fun createTinyAudio(context: Context): Uri {
+        val file = File(context.cacheDir, "recording_${System.nanoTime()}.m4a")
+        file.writeBytes(byteArrayOf(0, 1, 2, 3, 4, 5, 6, 7))
+        return Uri.fromFile(file)
+    }
+
     private data class RepositoryHarness(
         val context: Context,
         val database: AppDatabase,
@@ -197,6 +270,8 @@ class ChatRepositoryAttachmentInstrumentedTest {
 
     private class RecordingLlmApiService : LlmApiService {
         val calls = mutableListOf<List<LlmChatMessage>>()
+        val audioCalls = mutableListOf<LlmAudioInput>()
+        var transcriptionResult = "转写文本"
 
         override suspend fun createChatCompletion(
             settings: LlmSettings,
@@ -210,6 +285,14 @@ class ChatRepositoryAttachmentInstrumentedTest {
                 completionTokens = 4,
                 totalTokens = 12
             )
+        }
+
+        override suspend fun transcribeAudio(
+            settings: LlmSettings,
+            audio: LlmAudioInput
+        ): String {
+            audioCalls += audio
+            return transcriptionResult
         }
 
         fun lastUserMessage(): LlmChatMessage {

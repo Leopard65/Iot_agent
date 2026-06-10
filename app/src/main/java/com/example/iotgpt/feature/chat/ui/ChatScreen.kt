@@ -818,9 +818,14 @@ fun ChatScreen(
                     profiles = uiState.modelProfiles,
                     activeProfile = uiState.activeModelProfile,
                     onSelect = viewModel::activateModelProfile,
-                    onModelChanged = viewModel::updateActiveModelName,
                     modifier = Modifier.weight(1f)
                 )
+                uiState.activeModelProfile?.takeIf { it.supportsReasoning }?.let { profile ->
+                    ReasoningQuickToggle(
+                        enabled = profile.reasoningEnabled,
+                        onCheckedChange = viewModel::updateActiveReasoningEnabled
+                    )
+                }
                 TextButton(onClick = viewModel::createConversation) {
                     Text("新建")
                 }
@@ -929,7 +934,7 @@ fun ChatScreen(
                 }
             }
 
-            AppSectionCard(contentPadding = PaddingValues(10.dp)) {
+            AppSectionCard(contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)) {
                 val clawAccent = Color(0xFF39FF88)
                 pendingAttachment?.let { attachment ->
                     PendingAttachmentCard(
@@ -975,7 +980,7 @@ fun ChatScreen(
                             }
                         ),
                         placeholder = {
-                            Text(if (uiState.isClawMode) "Claw：拍照 / 文档 / 录音 / 下载 / 短信 / 搜索" else "输入消息")
+                            Text(if (uiState.isClawMode) "Claw 指令" else "输入消息")
                         },
                         colors = if (uiState.isClawMode) {
                             OutlinedTextFieldDefaults.colors(
@@ -1270,20 +1275,9 @@ private fun ModelQuickSwitcher(
     profiles: List<ModelProfile>,
     activeProfile: ModelProfile?,
     onSelect: (String) -> Unit,
-    onModelChanged: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
-    var modelDraft by rememberSaveable(activeProfile?.id) {
-        mutableStateOf(activeProfile?.model.orEmpty())
-    }
-    val suggestions = remember(activeProfile?.provider, activeProfile?.baseUrl) {
-        modelSuggestions(activeProfile)
-    }
-
-    LaunchedEffect(activeProfile?.id, activeProfile?.model) {
-        modelDraft = activeProfile?.model.orEmpty()
-    }
 
     Box(modifier = modifier) {
         Button(
@@ -1299,56 +1293,21 @@ private fun ModelQuickSwitcher(
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
-            modifier = Modifier.widthIn(min = 300.dp, max = 420.dp)
+            modifier = Modifier.widthIn(min = 220.dp, max = 320.dp)
         ) {
-            Column(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                Text(
-                    text = activeProfile?.name ?: "当前模型",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    text = activeProfile
-                        ?.let {
-                            "${it.provider} · ${it.model} · ${it.maskedKeyStatus()} · " +
-                                "图片输入${if (it.supportsVision) "已开启" else "未开启"}"
-                        }
-                        ?: "请先在设置页配置模型",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            HorizontalDivider()
-            Text(
-                text = "模型配置",
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
             profiles.forEach { profile ->
                 DropdownMenuItem(
                     text = {
-                        Column {
-                            Text(
-                                text = profile.name,
-                                fontWeight = if (profile.id == activeProfile?.id) {
-                                    FontWeight.Bold
-                                } else {
-                                    FontWeight.Normal
-                                }
-                            )
-                            Text(
-                                text = "${profile.provider} · ${profile.model}",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
+                        Text(
+                            text = profile.model,
+                            fontWeight = if (profile.id == activeProfile?.id) {
+                                FontWeight.Bold
+                            } else {
+                                FontWeight.Normal
+                            },
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     },
                     onClick = {
                         onSelect(profile.id)
@@ -1356,66 +1315,36 @@ private fun ModelQuickSwitcher(
                     }
                 )
             }
-            HorizontalDivider()
-            Text(
-                text = "同服务商模型",
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            suggestions.forEach { model ->
+            if (profiles.isEmpty()) {
                 DropdownMenuItem(
-                    text = { Text(model) },
-                    onClick = {
-                        modelDraft = model
-                        onModelChanged(model)
-                        expanded = false
-                    }
+                    text = { Text("请先到设置页新增模型") },
+                    enabled = false,
+                    onClick = {}
                 )
-            }
-            Column(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedTextField(
-                    value = modelDraft,
-                    onValueChange = { modelDraft = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    label = { Text("模型名称") }
-                )
-                Button(
-                    enabled = modelDraft.isNotBlank(),
-                    onClick = {
-                        onModelChanged(modelDraft)
-                        expanded = false
-                    }
-                ) {
-                    Text("应用")
-                }
             }
         }
     }
 }
 
-private fun modelSuggestions(profile: ModelProfile?): List<String> {
-    if (profile == null) return emptyList()
-    val marker = "${profile.provider} ${profile.baseUrl}".lowercase()
-    val defaults = when {
-        marker.contains("deepseek") -> listOf("deepseek-chat", "deepseek-reasoner")
-        marker.contains("dashscope") || marker.contains("qwen") -> listOf(
-            "qwen-plus",
-            "qwen-turbo",
-            "qwen-max",
-            "qwen-vl-plus"
+@Composable
+private fun ReasoningQuickToggle(
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "思考",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        marker.contains("openai") -> listOf("gpt-4.1-mini", "gpt-4.1", "gpt-4o-mini", "gpt-4o")
-        marker.contains("mimo") -> listOf("mimo-v2-pro")
-        else -> emptyList()
+        Switch(
+            checked = enabled,
+            onCheckedChange = onCheckedChange
+        )
     }
-    return (listOf(profile.model) + defaults)
-        .filter { it.isNotBlank() }
-        .distinct()
 }
 
 @Composable

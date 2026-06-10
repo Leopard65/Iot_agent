@@ -42,7 +42,7 @@ fun AppPage(
         .fillMaxSize()
         .background(MaterialTheme.colorScheme.background)
         .statusBarsPadding()
-        .padding(horizontal = 14.dp, vertical = 10.dp)
+        .padding(horizontal = 14.dp, vertical = 4.dp)
 
     Column(
         modifier = if (scrollable) {
@@ -50,7 +50,7 @@ fun AppPage(
         } else {
             pageModifier
         },
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         if (showHeader) {
             Row(
@@ -60,7 +60,7 @@ fun AppPage(
             ) {
                 Column(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     Text(
                         text = title,

@@ -10,6 +10,7 @@ enum class MainRoute(
 ) {
     Chat("chat", "对话", "聊"),
     Stats("stats", "统计", "图"),
+    Agent("agent", "Claw", "爪"),
     Settings("settings", "设置", "设")
 }
 

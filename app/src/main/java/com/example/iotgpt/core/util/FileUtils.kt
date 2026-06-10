@@ -80,6 +80,15 @@ object FileUtils {
         }.getOrNull()
     }
 
+    fun withTextPreview(json: String?, textPreview: String): String? {
+        if (json.isNullOrBlank()) return json
+        return runCatching {
+            JSONObject(json)
+                .put("textPreview", textPreview)
+                .toString()
+        }.getOrDefault(json)
+    }
+
     fun queryAttachmentInfo(context: Context, uri: Uri): AttachmentInfo {
         var displayName: String? = null
         var sizeBytes: Long? = null
@@ -172,6 +181,19 @@ object FileUtils {
 
         val encoded = Base64.encodeToString(payload.first, Base64.NO_WRAP)
         return "data:${payload.second};base64,$encoded"
+    }
+
+    fun readAttachmentBytesIfPossible(
+        context: Context,
+        uri: Uri,
+        maxBytes: Long = MAX_ATTACHMENT_BYTES
+    ): ByteArray? {
+        val size = queryAttachmentInfo(context, uri).sizeBytes
+        if (size != null && size > maxBytes) return null
+        val bytes = context.contentResolver.openInputStream(uri)?.use { input ->
+            input.readBytes()
+        } ?: return null
+        return bytes.takeIf { it.size <= maxBytes }
     }
 
     fun isTooLarge(context: Context, uri: Uri): Boolean {

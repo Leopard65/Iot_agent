@@ -419,6 +419,20 @@ class ChatViewModel(
         }
     }
 
+    fun updateActiveReasoningEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            runCatching {
+                settingsStore.updateActiveReasoningEnabled(enabled)
+            }.onSuccess {
+                _uiState.update {
+                    it.copy(noticeMessage = if (enabled) "思考模式已开启" else "思考模式已关闭")
+                }
+            }.onFailure { error ->
+                _uiState.update { it.copy(errorMessage = error.readableMessage()) }
+            }
+        }
+    }
+
     private fun observeConversations() {
         viewModelScope.launch {
             repository.observeConversations().collect { conversations ->

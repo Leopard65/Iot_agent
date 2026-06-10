@@ -28,17 +28,29 @@
 - 仓储级附件链路测试已改为独立测试 DataStore 文件，避免污染或依赖目标 App 的真实设置状态。
 - Room 编译器已从 Kapt 迁移到 KSP，消除了 Kotlin 2.0 下 Kapt 回退到 1.9 的构建提示。
 - 修复 Claw “打开 QQ/打开某应用”在真机上回退为浏览器搜索的问题：补充 Android 包可见性 `<queries>`，明确打开应用失败时写入失败原因，不再静默降级为搜索。
+- 聊天页去掉底部导航中的独立 Claw 页，只保留对话内 Claw 开关；压缩 Claw 输入区和顶部工具区，减少每个主导航页顶部留白。
+- 设置页改为以用户自建模型配置为中心：主列表只展示配置名、供应商、模型名和状态，Base URL/API Key/能力开关集中放到新增或编辑弹窗内。
+- 模型切换改为简洁下拉，只展示已保存配置中的模型名；新增“复制当前”入口，方便同一供应商下保存多个不同模型。
+- 模型配置新增“支持思考模式”和“默认开启思考”字段；聊天页对支持思考的当前模型显示开关，开关状态会持久化到当前模型配置。
+- OpenAI-compatible 请求体在思考模式开启时会实际携带 `enable_thinking=true` 和 `thinking.type=enabled`，并新增单测锁定该行为。
+- 备份与迁移规则显式包含 Room database、DataStore 和 shared preferences，并开启跨版本恢复，降低重新安装或设备迁移时丢失聊天记录/API 配置的风险。
+- 接入 OpenAI-compatible 语音转写：模型配置可开启语音转写并填写转写模型，录音附件会先调用 `/v1/audio/transcriptions`，再把转写文本加入聊天上下文。
+- 录音转写成功后会把文本缓存回附件 JSON，重新生成回复时复用缓存，避免重复转写。
+- 新增录音附件 UI 端到端仪器测试：真实录音控件生成附件，连接本地 MockWebServer 完成 mock 转写和 mock 聊天响应。
+- App-Leap 扩展拨号、地图导航、应用市场搜索/详情等系统级动作，并补充对应包可见性声明和单元测试。
+- 新增 `.gitattributes` 明确 Kotlin、XML、Markdown、Gradle 等文本文件行尾策略，减少 Windows 下 LF/CRLF 噪音。
+- 允许 cleartext HTTP，便于 Android 真机连接本地 OpenAI-compatible 服务或仪器测试 MockWebServer；真实线上服务仍建议使用 HTTPS。
 
 ## 后续待做
 
-- 接入真实语音转写能力，将录音附件转换为文本后再进入模型上下文。
-- 继续增加 UI 自动化或仪器测试，覆盖真实拍照结果，以及完整 UI 选择附件后通过本地 mock 服务发送的端到端链路。
+- 继续增加 UI 自动化或仪器测试，覆盖真实拍照结果，以及系统文件选择器选中文档后通过本地 mock 服务发送的端到端链路。
 - 当前 `Medium_Phone_2(AVD) - 16` 未解析到 `IMAGE_CAPTURE` 处理 Activity，拍照结果自动化需要换用带相机 App 的 AVD 或真机。
 - 在配置真实 API Key 或本地 OpenAI-compatible 服务后，增加一次真实服务 smoke test，确认不同服务商对多模态请求体的兼容性。
-- 继续扩充 App-Leap 应用别名与 deeplink 动作，例如地图导航、拨号页、应用市场详情页；第三方 App 内点击/填表仍需 AccessibilityService 方案单独设计。
+- 继续扩充 App-Leap 应用别名与 deeplink 动作；第三方 App 内点击/填表仍需 AccessibilityService 方案单独设计。
 - 真机验证相机、麦克风、短信、通知、文件选择器和不同 Android 版本的权限行为。
 - 根据真实 vision 模型测试结果，继续调优图片压缩尺寸和质量参数。
-- 统一或明确仓库行尾策略，减少 Windows 下 LF/CRLF 转换提示。
+- Android Studio 若使用“卸载后安装”、`pm clear`、清除应用数据或更换 applicationId，系统仍会删除本地 Room/DataStore 数据；需要在本机运行配置中关闭会清数据的部署选项，并用真实升级安装流程复测数据保留。
+- 对 DeepSeek/Qwen/MiMo 等真实服务商分别做思考模式 smoke test，确认各家的 OpenAI-compatible 字段兼容性；如某服务商字段不同，需要按 provider/model 增加适配。
 
 ## 测试记录
 
@@ -99,3 +111,17 @@
 - 2026-06-10 第三十五阶段 `testDebugUnitTest`：通过，新增覆盖 `打开qq` 解析、QQ 候选包、直接包名 `com.example.missing.app` 不被错误裁剪、浏览器搜索词清理。
 - 2026-06-10 第三十五阶段 `assembleDebug`：通过。
 - 2026-06-10 第三十五阶段 单条真机仪器测试：通过，在 `REA-AN00 - 15` 上运行 `clawOpenMissingAppWritesFailureInsteadOfBrowserFallback`，验证明确打开不存在应用时会写入“未找到可打开的应用”，不会回退浏览器搜索。发现项：完整 `connectedDebugAndroidTest` 在该真机上仍有既有 DocumentsUI 文件选择差异，`documentPickerCanCreatePendingDocumentAttachment` 找不到预置文件；后续需针对真机文件选择器适配。
+- 2026-06-11 第三十六阶段：按反馈优化 Claw 与模型配置体验，移除底部 Claw 导航入口，压缩聊天顶部/输入区和主页面顶部留白，重做设置页信息层级，支持同供应商多模型配置、简洁模型切换、思考模式配置和聊天页快速开关；持久化规则补充 DataStore/Room 备份范围。
+- 2026-06-11 第三十六阶段 `testDebugUnitTest`：通过，新增 `sendsReasoningParametersWhenThinkingIsEnabled` 覆盖思考模式请求体参数。
+- 2026-06-11 第三十六阶段 `assembleDebug`：通过，debug APK 构建正常。
+- 2026-06-11 第三十六阶段 单条真机仪器测试：通过，在 `REA-AN00 - 15` 上运行 `clawOpenMissingAppWritesFailureInsteadOfBrowserFallback`，验证安装到设备后的基础 Claw 打开应用失败回写路径仍正常。
+- 2026-06-11 第三十六阶段 敏感信息/占位扫描：通过，源码未发现 TODO/FIXME 或疑似硬编码 API Key；命中项均为文档中记录的历史测试命令。
+- 2026-06-11 第三十六阶段 `git diff --check`：通过，无空白错误；仍有既有 LF/CRLF 转换提示，保留在后续待做。
+- 2026-06-11 第三十七阶段：完成当前环境可做的后续提升：语音转写配置、OpenAI-compatible multipart 转写客户端、录音转写上下文注入与缓存、App-Leap 拨号/地图/应用市场动作、androidTest MockWebServer 依赖、UI 录音端到端 mock 测试、仓库 `.gitattributes` 行尾策略。
+- 2026-06-11 第三十七阶段 `testDebugUnitTest`：通过，新增覆盖音频转写 multipart 请求和 App-Leap 拨号/地图/应用市场解析。
+- 2026-06-11 第三十七阶段 `assembleDebug`：通过，debug APK 构建正常。
+- 2026-06-11 第三十七阶段 单条真机仪器测试：首次运行 `recordingAttachmentSendsThroughMockTranscriptionAndChatService` 未通过，原因是 Compose 中“新建”文本匹配到两个节点；处理为 `onAllNodesWithText(...).onFirst()` 后重跑通过。
+- 2026-06-11 第三十七阶段 仓储级真机仪器测试：通过，运行 `audioAttachmentWithTranscriptionAddsTranscriptToContext` 和 `audioTranscriptionIsCachedForRegeneration`，验证录音转写进入上下文且重新生成时复用缓存。
+- 2026-06-11 第三十七阶段 Claw 真机回归：通过，运行 `clawOpenMissingAppWritesFailureInsteadOfBrowserFallback`，验证 App-Leap 动作扩展后，明确打开不存在应用仍不会回退到浏览器搜索。
+- 2026-06-11 第三十七阶段 敏感信息/占位扫描：通过，源码未发现 TODO/FIXME 或疑似硬编码 API Key；命中项均为文档中记录的历史测试命令。
+- 2026-06-11 第三十七阶段 `git diff --check`：通过，无空白错误；新增 `.gitattributes` 后工作区提示后续将按 LF 归一化。

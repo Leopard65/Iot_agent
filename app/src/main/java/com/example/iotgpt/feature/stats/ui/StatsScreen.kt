@@ -61,6 +61,32 @@ fun StatsScreen(
             )
         }
     ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            MetricCard(
+                label = "会话数",
+                value = uiState.totalConversations.toString(),
+                modifier = Modifier.weight(1f)
+            )
+            MetricCard(
+                label = "消息数",
+                value = uiState.totalMessages.toString(),
+                modifier = Modifier.weight(1f)
+            )
+            MetricCard(
+                label = "今日消息",
+                value = uiState.todayMessages.toString(),
+                modifier = Modifier.weight(1f)
+            )
+            MetricCard(
+                label = "模型调用",
+                value = uiState.totalModelCalls.toString(),
+                modifier = Modifier.weight(1f)
+            )
+        }
+
         ModelAnalyticsPanel(
             uiState = uiState,
             selectedMode = chartMode,

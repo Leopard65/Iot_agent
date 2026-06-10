@@ -100,6 +100,10 @@ fun SettingsScreen(
             onApiKeyChanged = viewModel::updateApiKey,
             onModelChanged = viewModel::updateModel,
             onSupportsVisionChanged = viewModel::updateSupportsVision,
+            onSupportsReasoningChanged = viewModel::updateSupportsReasoning,
+            onReasoningEnabledChanged = viewModel::updateReasoningEnabled,
+            onSupportsAudioTranscriptionChanged = viewModel::updateSupportsAudioTranscription,
+            onTranscriptionModelChanged = viewModel::updateTranscriptionModel,
             onApplyPreset = viewModel::applyPreset,
             onSave = viewModel::saveSettings,
             onTest = { viewModel.testConnection() }
@@ -108,7 +112,7 @@ fun SettingsScreen(
 
     AppPage(
         title = "设置",
-        subtitle = "模型服务、主题模式与调试操作",
+        subtitle = "",
         trailing = {
             StatusPill(
                 text = if (uiState.activeProfile?.apiKey.isNullOrBlank()) {
@@ -122,36 +126,31 @@ fun SettingsScreen(
     ) {
         SettingsStatusBanner(message = uiState.statusMessage)
 
-        ActiveProfilePanel(
-            profile = uiState.activeProfile,
-            profileCount = uiState.profiles.size,
-            onEdit = {
-                uiState.activeProfile?.let { profile ->
-                    viewModel.editProfile(profile.id)
-                    showEditorDialog = true
-                }
-            },
-            onTest = {
-                uiState.activeProfile?.let { viewModel.testConnection(it.id) }
-            },
-            isTesting = uiState.testingProfileId == uiState.activeProfileId
-        )
-
         AppSectionCard(
             modifier = Modifier.fillMaxWidth(),
             contentPadding = PaddingValues(12.dp)
         ) {
             SectionHeader(
                 title = "模型配置",
-                subtitle = "管理多套 OpenAI 兼容服务，聊天页会使用当前启用项。",
+                subtitle = "保存多套配置；详细 URL、Key 和能力开关只在编辑页显示。",
                 trailing = {
-                    Button(
-                        onClick = {
-                            viewModel.startNewProfile()
-                            showEditorDialog = true
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        TextButton(
+                            onClick = {
+                                viewModel.duplicateActiveProfile()
+                                showEditorDialog = true
+                            }
+                        ) {
+                            Text("复制当前")
                         }
-                    ) {
-                        Text("新增")
+                        Button(
+                            onClick = {
+                                viewModel.startNewProfile()
+                                showEditorDialog = true
+                            }
+                        ) {
+                            Text("新增")
+                        }
                     }
                 }
             )
@@ -287,13 +286,6 @@ private fun ActiveProfilePanel(
                     tone = if (profile.apiKey.isBlank()) StatusTone.Neutral else StatusTone.Success
                 )
             }
-            Text(
-                text = profile.baseUrl,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -302,6 +294,15 @@ private fun ActiveProfilePanel(
                     text = if (profile.supportsVision) "图片输入已开" else "文本模式",
                     tone = if (profile.supportsVision) StatusTone.Primary else StatusTone.Neutral
                 )
+                if (profile.supportsReasoning) {
+                    StatusPill(
+                        text = if (profile.reasoningEnabled) "思考已开" else "思考可用",
+                        tone = if (profile.reasoningEnabled) StatusTone.Primary else StatusTone.Neutral
+                    )
+                }
+                if (profile.supportsAudioTranscription) {
+                    StatusPill(text = "转写", tone = StatusTone.Primary)
+                }
                 TextButton(onClick = onEdit) {
                     Text("编辑")
                 }
@@ -416,6 +417,10 @@ private fun ProfileEditorDialog(
     onApiKeyChanged: (String) -> Unit,
     onModelChanged: (String) -> Unit,
     onSupportsVisionChanged: (Boolean) -> Unit,
+    onSupportsReasoningChanged: (Boolean) -> Unit,
+    onReasoningEnabledChanged: (Boolean) -> Unit,
+    onSupportsAudioTranscriptionChanged: (Boolean) -> Unit,
+    onTranscriptionModelChanged: (String) -> Unit,
     onApplyPreset: (String, String, String, String) -> Unit,
     onSave: () -> Unit,
     onTest: () -> Unit
@@ -511,6 +516,88 @@ private fun ProfileEditorDialog(
                     Checkbox(
                         checked = uiState.supportsVision,
                         onCheckedChange = onSupportsVisionChanged
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "支持思考模式",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "开启后请求体会携带真实思考参数",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Checkbox(
+                        checked = uiState.supportsReasoning,
+                        onCheckedChange = onSupportsReasoningChanged
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "默认开启思考",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = if (uiState.supportsReasoning) {
+                                "聊天页也可以临时切换"
+                            } else {
+                                "先声明模型支持思考模式"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Checkbox(
+                        enabled = uiState.supportsReasoning,
+                        checked = uiState.supportsReasoning && uiState.reasoningEnabled,
+                        onCheckedChange = onReasoningEnabledChanged
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "支持语音转写",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "开启后录音附件会先转文字再进入对话上下文",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Checkbox(
+                        checked = uiState.supportsAudioTranscription,
+                        onCheckedChange = onSupportsAudioTranscriptionChanged
+                    )
+                }
+                if (uiState.supportsAudioTranscription) {
+                    OutlinedTextField(
+                        value = uiState.transcriptionModel,
+                        onValueChange = onTranscriptionModelChanged,
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodySmall,
+                        label = { Text("语音转写模型") },
+                        placeholder = { Text("whisper-1") }
                     )
                 }
                 uiState.statusMessage?.let {
@@ -662,15 +749,8 @@ private fun ModelProfileRow(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = "${profile.provider} · ${profile.model}",
+                    text = profile.model,
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = profile.baseUrl,
-                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -699,11 +779,21 @@ private fun ModelProfileRow(
                 }
             }
         }
-        Text(
-            text = "${profile.maskedKeyStatus()} · 图片输入${if (profile.supportsVision) "已开启" else "未开启"}",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            StatusPill(text = profile.provider.ifBlank { "Custom" }, tone = StatusTone.Neutral)
+            if (profile.supportsVision) {
+                StatusPill(text = "图片", tone = StatusTone.Primary)
+            }
+            if (profile.supportsReasoning) {
+                StatusPill(
+                    text = if (profile.reasoningEnabled) "思考开" else "思考",
+                    tone = if (profile.reasoningEnabled) StatusTone.Primary else StatusTone.Neutral
+                )
+            }
+            if (profile.supportsAudioTranscription) {
+                StatusPill(text = "转写", tone = StatusTone.Primary)
+            }
+        }
         Row(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically

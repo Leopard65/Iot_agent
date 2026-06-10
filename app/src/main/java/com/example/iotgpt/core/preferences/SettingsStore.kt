@@ -67,7 +67,10 @@ class SettingsStore(
                         baseUrl = settings.baseUrl.trim(),
                         apiKey = settings.apiKey.trim(),
                         model = settings.model.trim(),
-                        supportsVision = settings.supportsVision
+                        supportsVision = settings.supportsVision,
+                        reasoningEnabled = profile.supportsReasoning && settings.reasoningEnabled,
+                        supportsAudioTranscription = settings.supportsAudioTranscription,
+                        transcriptionModel = settings.transcriptionModel
                     )
                 } else {
                     profile
@@ -136,6 +139,25 @@ class SettingsStore(
         }
     }
 
+    suspend fun updateActiveReasoningEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            val profiles = readProfiles(preferences)
+            val activeId = preferences[ACTIVE_MODEL_PROFILE_ID]
+                ?: inferActiveProfileId(preferences, profiles)
+            val updatedProfiles = profiles.map { profile ->
+                if (profile.id == activeId) {
+                    profile.copy(reasoningEnabled = profile.supportsReasoning && enabled).normalized()
+                } else {
+                    profile
+                }
+            }
+            writeProfiles(preferences, updatedProfiles)
+            preferences[ACTIVE_MODEL_PROFILE_ID] = activeId
+            updatedProfiles.firstOrNull { it.id == activeId }
+                ?.writeLegacyPreferences(preferences)
+        }
+    }
+
     suspend fun deleteModelProfile(profileId: String) {
         dataStore.edit { preferences ->
             val profiles = readProfiles(preferences)
@@ -175,6 +197,7 @@ class SettingsStore(
     companion object {
         const val DEFAULT_BASE_URL = "https://api.deepseek.com"
         const val DEFAULT_MODEL = "deepseek-chat"
+        const val DEFAULT_TRANSCRIPTION_MODEL = "whisper-1"
 
         private val BASE_URL = stringPreferencesKey("api_base_url")
         private val API_KEY = stringPreferencesKey("api_key")
@@ -211,14 +234,26 @@ class SettingsStore(
                                 baseUrl = item.optString("baseUrl"),
                                 apiKey = item.optString("apiKey"),
                                 model = item.optString("model"),
-                                supportsVision = item.optBoolean("supportsVision", false)
+                                supportsVision = item.optBoolean("supportsVision", false),
+                                supportsReasoning = item.optBoolean("supportsReasoning", false),
+                                reasoningEnabled = item.optBoolean("reasoningEnabled", false),
+                                supportsAudioTranscription = item.optBoolean(
+                                    "supportsAudioTranscription",
+                                    false
+                                ),
+                                transcriptionModel = item.optString(
+                                    "transcriptionModel",
+                                    DEFAULT_TRANSCRIPTION_MODEL
+                                )
                             ).normalized()
                         )
                     }
                 }.filter { it.id.isNotBlank() }
             }.getOrDefault(emptyList())
 
-            return parsed.ifEmpty { defaultProfiles(preferences) }
+            return parsed
+                .filterNot { it.isUnusedBuiltInPreset() }
+                .ifEmpty { defaultProfiles(preferences) }
         }
 
         private fun writeProfiles(preferences: MutablePreferences, profiles: List<ModelProfile>) {
@@ -233,6 +268,10 @@ class SettingsStore(
                         .put("apiKey", profile.apiKey)
                         .put("model", profile.model)
                         .put("supportsVision", profile.supportsVision)
+                        .put("supportsReasoning", profile.supportsReasoning)
+                        .put("reasoningEnabled", profile.reasoningEnabled)
+                        .put("supportsAudioTranscription", profile.supportsAudioTranscription)
+                        .put("transcriptionModel", profile.transcriptionModel)
                 )
             }
             preferences[MODEL_PROFILES] = array.toString()
@@ -246,53 +285,14 @@ class SettingsStore(
                 baseUrl = preferences[BASE_URL] ?: DEFAULT_BASE_URL,
                 apiKey = preferences[API_KEY].orEmpty(),
                 model = preferences[MODEL] ?: DEFAULT_MODEL,
-                supportsVision = false
+                supportsVision = false,
+                supportsReasoning = inferLegacySupportsReasoning(preferences),
+                reasoningEnabled = false,
+                supportsAudioTranscription = inferLegacySupportsAudioTranscription(preferences),
+                transcriptionModel = DEFAULT_TRANSCRIPTION_MODEL
             ).normalized()
 
-            val presets = listOf(
-                ModelProfile(
-                    id = "deepseek",
-                    name = "DeepSeek",
-                    provider = "DeepSeek",
-                    baseUrl = DEFAULT_BASE_URL,
-                    apiKey = "",
-                    model = DEFAULT_MODEL,
-                    supportsVision = false
-                ),
-                ModelProfile(
-                    id = "qwen",
-                    name = "通义千问",
-                    provider = "DashScope",
-                    baseUrl = "https://dashscope.aliyuncs.com/compatible-mode",
-                    apiKey = "",
-                    model = "qwen-plus",
-                    supportsVision = false
-                ),
-                ModelProfile(
-                    id = "mimo",
-                    name = "小米 MiMo",
-                    provider = "MiMo",
-                    baseUrl = "https://api.xiaomimimo.com/v1",
-                    apiKey = "",
-                    model = "mimo-v2-pro",
-                    supportsVision = false
-                ),
-                ModelProfile(
-                    id = "openai",
-                    name = "OpenAI",
-                    provider = "OpenAI",
-                    baseUrl = "https://api.openai.com/v1",
-                    apiKey = "",
-                    model = "gpt-4.1-mini",
-                    supportsVision = false
-                )
-            )
-
-            return (listOf(legacy) + presets)
-                .distinctBy { it.id }
-                .map { profile ->
-                    if (profile.id == legacy.id) legacy else profile
-                }
+            return listOf(legacy)
         }
 
         private fun inferActiveProfileId(
@@ -336,6 +336,23 @@ class SettingsStore(
                 else -> "Custom"
             }
         }
+
+        private fun inferLegacySupportsReasoning(preferences: Preferences): Boolean {
+            val marker = "${inferLegacyProvider(preferences)} ${preferences[MODEL] ?: DEFAULT_MODEL}".lowercase()
+            return listOf("deepseek", "reasoner", "qwen", "mimo", "thinking", "reasoning")
+                .any { marker.contains(it) }
+        }
+
+        private fun inferLegacySupportsAudioTranscription(preferences: Preferences): Boolean {
+            val marker = "${inferLegacyProvider(preferences)} ${preferences[BASE_URL].orEmpty()}".lowercase()
+            return listOf("openai", "whisper").any { marker.contains(it) }
+        }
+
+        private fun ModelProfile.isUnusedBuiltInPreset(): Boolean {
+            return id in BUILT_IN_PRESET_IDS && apiKey.isBlank()
+        }
+
+        private val BUILT_IN_PRESET_IDS = setOf("deepseek", "qwen", "mimo", "openai")
     }
 }
 
@@ -343,7 +360,10 @@ data class LlmSettings(
     val baseUrl: String,
     val apiKey: String,
     val model: String,
-    val supportsVision: Boolean = false
+    val supportsVision: Boolean = false,
+    val reasoningEnabled: Boolean = false,
+    val supportsAudioTranscription: Boolean = false,
+    val transcriptionModel: String = SettingsStore.DEFAULT_TRANSCRIPTION_MODEL
 )
 
 data class ModelProfile(
@@ -353,14 +373,22 @@ data class ModelProfile(
     val baseUrl: String,
     val apiKey: String,
     val model: String,
-    val supportsVision: Boolean = false
+    val supportsVision: Boolean = false,
+    val supportsReasoning: Boolean = false,
+    val reasoningEnabled: Boolean = false,
+    val supportsAudioTranscription: Boolean = false,
+    val transcriptionModel: String = SettingsStore.DEFAULT_TRANSCRIPTION_MODEL
 ) {
     fun toLlmSettings(): LlmSettings {
         return LlmSettings(
             baseUrl = baseUrl,
             apiKey = apiKey,
             model = model,
-            supportsVision = supportsVision
+            supportsVision = supportsVision,
+            reasoningEnabled = supportsReasoning && reasoningEnabled,
+            supportsAudioTranscription = supportsAudioTranscription,
+            transcriptionModel = transcriptionModel.trim()
+                .ifBlank { SettingsStore.DEFAULT_TRANSCRIPTION_MODEL }
         )
     }
 
@@ -372,7 +400,12 @@ data class ModelProfile(
             baseUrl = baseUrl.trim(),
             apiKey = apiKey.trim(),
             model = model.trim(),
-            supportsVision = supportsVision
+            supportsVision = supportsVision,
+            supportsReasoning = supportsReasoning,
+            reasoningEnabled = supportsReasoning && reasoningEnabled,
+            supportsAudioTranscription = supportsAudioTranscription,
+            transcriptionModel = transcriptionModel.trim()
+                .ifBlank { SettingsStore.DEFAULT_TRANSCRIPTION_MODEL }
         )
     }
 
