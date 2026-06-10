@@ -101,7 +101,10 @@ class StatsViewModel(
                         modelUsageByDay = buildUsageByDay(records),
                         modelUsageByHour = buildUsageByHour(records),
                         modelUsageDistribution = buildModelUsageDistribution(records),
-                        modelCallTrend = buildModelCallTrend(records)
+                        modelCallTrend = buildModelCallTrend(records),
+                        totalPromptTokens = records.sumOf { record -> record.promptTokens },
+                        totalCompletionTokens = records.sumOf { record -> record.completionTokens },
+                        estimatedModelUsageCount = records.count { record -> record.isEstimated }
                     )
                 }
             }
@@ -317,6 +320,9 @@ data class StatsUiState(
     val completedAgentTasks: Int = 0,
     val totalModelCalls: Int = 0,
     val totalTokens: Long = 0,
+    val totalPromptTokens: Int = 0,
+    val totalCompletionTokens: Int = 0,
+    val estimatedModelUsageCount: Int = 0,
     val lastModelRequestAt: Long? = null,
     val activeProfileName: String = "DeepSeek",
     val activeProvider: String = "DeepSeek",

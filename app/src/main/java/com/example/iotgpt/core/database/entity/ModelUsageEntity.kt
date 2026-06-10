@@ -22,5 +22,6 @@ data class ModelUsageEntity(
     val promptTokens: Int,
     val completionTokens: Int,
     val totalTokens: Int,
+    val isEstimated: Boolean,
     val createdAt: Long
 )

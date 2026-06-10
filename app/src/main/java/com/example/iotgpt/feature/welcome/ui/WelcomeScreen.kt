@@ -4,21 +4,23 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Button
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import com.example.iotgpt.core.components.AppPage
 import com.example.iotgpt.core.components.AppSectionCard
 import com.example.iotgpt.core.components.StatusPill
 import com.example.iotgpt.core.components.StatusTone
+import com.example.iotgpt.core.testing.AppTestTags
 
 /**
  * First-launch onboarding for the AIoT Assistant app.
@@ -61,15 +63,27 @@ fun WelcomeScreen(
 
         AppSectionCard(modifier = Modifier.fillMaxWidth()) {
             Text(
-                text = "加载状态",
+                text = "本页准备内容",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             Text(
-                text = page.loadingText,
+                text = page.readyText,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            page.readyItems.forEach { item ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = item,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    StatusPill("已就绪", tone = StatusTone.Success)
+                }
+            }
         }
 
         Row(
@@ -83,6 +97,7 @@ fun WelcomeScreen(
                 Text("上一步")
             }
             Button(
+                modifier = Modifier.testTag(AppTestTags.WELCOME_NEXT),
                 onClick = {
                     if (isLastPage) {
                         onFinished()
@@ -101,7 +116,8 @@ private data class OnboardingPage(
     val title: String,
     val description: String,
     val tag: String,
-    val loadingText: String
+    val readyText: String,
+    val readyItems: List<String>
 )
 
 private val onboardingPages = listOf(
@@ -109,18 +125,33 @@ private val onboardingPages = listOf(
         title = "AI 物联网问答",
         description = "围绕传感器、嵌入式开发、MQTT、边缘计算和设备联网问题进行课程问答。",
         tag = "Chat Completions",
-        loadingText = "正在准备对话工作区"
+        readyText = "对话页已经准备好。真正联网回答需要先在设置页填写对应模型的 API Key。",
+        readyItems = listOf(
+            "本地会话历史",
+            "模型快速切换",
+            "异步回复与中断"
+        )
     ),
     OnboardingPage(
         title = "多模态采集",
-        description = "在会话中添加图片、文档和录音，txt 文档可作为上下文发送给模型。",
+        description = "在会话中添加图片、文档和录音；文本、Markdown、PDF 和 DOCX 会尽量提取正文后发送给模型。",
         tag = "Camera · File · Audio",
-        loadingText = "正在加载采集入口"
+        readyText = "采集入口已启用。图片解析取决于当前模型是否开启视觉能力，录音会先作为附件保存。",
+        readyItems = listOf(
+            "拍照与图库图片",
+            "文档正文提取",
+            "可定时录音"
+        )
     ),
     OnboardingPage(
         title = "数据统计与模型配置",
         description = "记录会话、模型调用、Token/字符估算和网络状态，支持多个兼容模型服务配置。",
         tag = "Room · DataStore",
-        loadingText = "正在同步本地设置"
+        readyText = "本地数据库和设置项已可用。首次使用建议先进入设置页测试模型连接。",
+        readyItems = listOf(
+            "本地统计面板",
+            "多模型配置",
+            "连接测试入口"
+        )
     )
 )

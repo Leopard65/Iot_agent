@@ -1,6 +1,7 @@
 package com.example.iotgpt.feature.stats.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -110,6 +112,8 @@ private fun ModelAnalyticsPanel(
     selectedMode: ModelChartMode,
     onModeSelected: (ModelChartMode) -> Unit
 ) {
+    var selectedInsight by rememberSaveable(selectedMode) { mutableStateOf<String?>(null) }
+
     AppSectionCard(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -117,13 +121,18 @@ private fun ModelAnalyticsPanel(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
+                val estimateSuffix = if (uiState.estimatedModelUsageCount > 0) {
+                    " · 含 ${uiState.estimatedModelUsageCount} 条估算"
+                } else {
+                    " · 精确"
+                }
                 Text(
                     text = selectedMode.title,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    text = "总调用 ${uiState.totalModelCalls} 次 · Token/字符 ${formatAmount(uiState.totalTokens)}",
+                    text = "上传 ${formatAmount(uiState.totalPromptTokens.toLong())} · 下载 ${formatAmount(uiState.totalCompletionTokens.toLong())} · 总计 ${formatAmount(uiState.totalTokens)}$estimateSuffix",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -140,14 +149,31 @@ private fun ModelAnalyticsPanel(
             EmptyChartState()
         } else {
             when (selectedMode) {
-                ModelChartMode.Consumption -> ModelUsageDistributionChart(uiState.modelUsageDistribution)
-                ModelChartMode.Trend -> ModelCallTrendChart(uiState.modelCallTrend)
+                ModelChartMode.Consumption -> ModelUsageDistributionChart(
+                    buckets = uiState.modelUsageDistribution,
+                    onInsight = { selectedInsight = it }
+                )
+                ModelChartMode.Trend -> ModelCallTrendChart(
+                    buckets = uiState.modelCallTrend,
+                    onInsight = { selectedInsight = it }
+                )
                 ModelChartMode.CountDistribution -> ModelCallCountDonutChart(
                     segments = uiState.modelUsage.map {
                         UsageSegment(modelId = it.modelId, amount = it.callCount.toLong())
-                    }
+                    },
+                    onInsight = { selectedInsight = it }
                 )
-                ModelChartMode.Ranking -> ModelCallRankingChart(uiState.modelUsage)
+                ModelChartMode.Ranking -> ModelCallRankingChart(
+                    usage = uiState.modelUsage,
+                    onInsight = { selectedInsight = it }
+                )
+            }
+            selectedInsight?.let {
+                Text(
+                    text = "选中：$it",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
@@ -285,7 +311,8 @@ private fun UsageBarChart(
 
 @Composable
 private fun ModelUsageDistributionChart(
-    buckets: List<StackedUsageBucket>
+    buckets: List<StackedUsageBucket>,
+    onInsight: (String) -> Unit
 ) {
     val palette = chartPalette()
     val data = buckets.ifEmpty {
@@ -312,6 +339,23 @@ private fun ModelUsageDistributionChart(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(220.dp)
+                .pointerInput(data) {
+                    detectTapGestures { offset ->
+                        val plotLeft = 10f
+                        val plotRight = size.width - 8f
+                        val plotWidth = plotRight - plotLeft
+                        val slotWidth = plotWidth / data.size.coerceAtLeast(1)
+                        val index = ((offset.x - plotLeft) / slotWidth)
+                            .toInt()
+                            .coerceIn(0, data.lastIndex)
+                        val bucket = data[index]
+                        val detail = bucket.segments
+                            .sortedByDescending { it.amount }
+                            .joinToString("，") { "${it.modelId} ${formatAmount(it.amount)}" }
+                            .ifBlank { "无调用" }
+                        onInsight("${bucket.label} · 总计 ${formatAmount(bucket.total)} · $detail")
+                    }
+                }
         ) {
             val plotLeft = 10f
             val plotTop = 12f
@@ -381,7 +425,8 @@ private fun ModelUsageDistributionChart(
 
 @Composable
 private fun ModelCallTrendChart(
-    buckets: List<StackedUsageBucket>
+    buckets: List<StackedUsageBucket>,
+    onInsight: (String) -> Unit
 ) {
     val palette = chartPalette()
     val data = buckets.ifEmpty { listOf(StackedUsageBucket("暂无", emptyList())) }
@@ -410,6 +455,27 @@ private fun ModelCallTrendChart(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(220.dp)
+                .pointerInput(data) {
+                    detectTapGestures { offset ->
+                        val plotLeft = 10f
+                        val plotRight = size.width - 8f
+                        val plotWidth = plotRight - plotLeft
+                        val slotWidth = if (data.size <= 1) plotWidth else plotWidth / (data.size - 1)
+                        val index = if (data.size <= 1) {
+                            0
+                        } else {
+                            ((offset.x - plotLeft + slotWidth / 2f) / slotWidth)
+                                .toInt()
+                                .coerceIn(0, data.lastIndex)
+                        }
+                        val bucket = data[index]
+                        val detail = bucket.segments
+                            .sortedByDescending { it.amount }
+                            .joinToString("，") { "${it.modelId} ${it.amount} 次" }
+                            .ifBlank { "无调用" }
+                        onInsight("${bucket.label} · 总计 ${bucket.total} 次 · $detail")
+                    }
+                }
         ) {
             val plotLeft = 10f
             val plotTop = 12f
@@ -460,7 +526,8 @@ private fun ModelCallTrendChart(
 
 @Composable
 private fun ModelCallCountDonutChart(
-    segments: List<UsageSegment>
+    segments: List<UsageSegment>,
+    onInsight: (String) -> Unit
 ) {
     val palette = chartPalette()
     val data = segments.filter { it.amount > 0L }
@@ -475,7 +542,34 @@ private fun ModelCallCountDonutChart(
             modifier = Modifier.size(180.dp),
             contentAlignment = Alignment.Center
         ) {
-            Canvas(modifier = Modifier.size(180.dp)) {
+            Canvas(
+                modifier = Modifier
+                    .size(180.dp)
+                    .pointerInput(data, total) {
+                        detectTapGestures { offset ->
+                            if (total <= 0L) return@detectTapGestures
+                            val centerX = size.width / 2f
+                            val centerY = size.height / 2f
+                            val degrees = Math.toDegrees(
+                                kotlin.math.atan2(
+                                    (offset.y - centerY).toDouble(),
+                                    (offset.x - centerX).toDouble()
+                                )
+                            ).toFloat()
+                            val sweepPosition = (degrees + 90f + 360f) % 360f
+                            var consumed = 0f
+                            data.forEachIndexed { index, item ->
+                                val sweep = item.amount.toFloat() / total.toFloat() * 360f
+                                if (sweepPosition >= consumed && sweepPosition <= consumed + sweep) {
+                                    val percent = item.amount * 100 / total
+                                    onInsight("${item.modelId} · ${item.amount} 次 · $percent%")
+                                    return@detectTapGestures
+                                }
+                                consumed += sweep
+                            }
+                        }
+                    }
+            ) {
                 val strokeWidth = 24.dp.toPx()
                 if (total <= 0L) {
                     drawCircle(
@@ -529,7 +623,8 @@ private fun ModelCallCountDonutChart(
 
 @Composable
 private fun ModelCallRankingChart(
-    usage: List<ModelUsageSummary>
+    usage: List<ModelUsageSummary>,
+    onInsight: (String) -> Unit
 ) {
     val palette = chartPalette()
     val data = usage.sortedByDescending { it.callCount }.take(8)
@@ -558,6 +653,13 @@ private fun ModelCallRankingChart(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(18.dp)
+                        .pointerInput(item) {
+                            detectTapGestures {
+                                onInsight(
+                                    "${item.modelId} · ${item.callCount} 次 · 总计 ${formatAmount(item.totalTokens)}"
+                                )
+                            }
+                        }
                 ) {
                     drawRoundRect(
                         color = Color(0xFFE7EAF0),

@@ -14,6 +14,10 @@ import com.example.iotgpt.core.preferences.LlmSettings
 import com.example.iotgpt.core.preferences.SettingsStore
 import com.example.iotgpt.core.util.FileUtils
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
@@ -64,6 +68,16 @@ class ChatRepositoryImpl(
         conversationDao.deleteConversationById(id)
     }
 
+    override suspend fun renameConversation(id: String, title: String) {
+        val trimmed = title.trim()
+        require(trimmed.isNotBlank()) { "会话名称不能为空" }
+        conversationDao.renameConversation(
+            id = id,
+            title = trimmed.take(48),
+            updatedAt = System.currentTimeMillis()
+        )
+    }
+
     override suspend fun sendUserMessage(conversationId: String?, content: String): String {
         return sendMessage(
             conversationId = conversationId,
@@ -82,6 +96,53 @@ class ChatRepositoryImpl(
             content = content,
             attachmentJson = attachmentJson
         )
+    }
+
+    override suspend fun addLocalMessage(
+        conversationId: String?,
+        role: String,
+        content: String,
+        attachmentJson: String?
+    ): String {
+        val conversation = conversationId
+            ?.let { conversationDao.getConversation(it) }
+            ?: createConversation()
+        val now = System.currentTimeMillis()
+
+        messageDao.upsertMessage(
+            MessageEntity(
+                id = UUID.randomUUID().toString(),
+                conversationId = conversation.id,
+                role = role,
+                content = content,
+                attachmentJson = attachmentJson,
+                createdAt = now,
+                isStreaming = false,
+                tokenCount = estimateTokenCount(content)
+            )
+        )
+        refreshConversationMeta(conversation.id, messageDao.getMessages(conversation.id), now)
+        return conversation.id
+    }
+
+    override suspend fun stopStreamingAssistant(conversationId: String?) {
+        val id = conversationId ?: return
+        val now = System.currentTimeMillis()
+        val messages = messageDao.getMessages(id)
+        val streamingMessages = messages.filter { it.role == "assistant" && it.isStreaming }
+        streamingMessages.forEach { message ->
+            val stoppedContent = message.content.ifBlank { "已中断本次回复。" }
+            messageDao.upsertMessage(
+                message.copy(
+                    content = stoppedContent,
+                    isStreaming = false,
+                    tokenCount = estimateTokenCount(stoppedContent)
+                )
+            )
+        }
+        if (streamingMessages.isNotEmpty()) {
+            refreshConversationMeta(id, messageDao.getMessages(id), now)
+        }
     }
 
     private suspend fun sendMessage(
@@ -176,7 +237,7 @@ class ChatRepositoryImpl(
             createdAt = loadingMessage.createdAt,
             settings = settings
         )
-        messageDao.upsertMessage(assistantMessage)
+        revealAssistantMessage(loadingMessage, assistantMessage)
         val finalMessages = messageDao.getMessages(conversationId)
         val summary = maybeGenerateSummaryIfNeeded(
             conversationId = conversationId,
@@ -200,6 +261,33 @@ class ChatRepositoryImpl(
         return conversationId
     }
 
+    private suspend fun revealAssistantMessage(
+        loadingMessage: MessageEntity,
+        assistantMessage: MessageEntity
+    ) {
+        val content = assistantMessage.content
+        val shouldType = content.isNotBlank() && !content.startsWith("API 请求失败")
+        if (!shouldType) {
+            messageDao.upsertMessage(assistantMessage)
+            return
+        }
+
+        val builder = StringBuilder()
+        content.chunked(TYPEWRITER_CHUNK_SIZE).forEach { chunk ->
+            currentCoroutineContext().ensureActive()
+            builder.append(chunk)
+            messageDao.upsertMessage(
+                loadingMessage.copy(
+                    content = builder.toString(),
+                    isStreaming = true,
+                    tokenCount = null
+                )
+            )
+            delay(TYPEWRITER_DELAY_MS)
+        }
+        messageDao.upsertMessage(assistantMessage)
+    }
+
     private suspend fun requestAssistantMessage(
         conversationId: String,
         messageId: String,
@@ -214,11 +302,17 @@ class ChatRepositoryImpl(
             .takeLast(MAX_CONTEXT_MESSAGES)
             .map { it.toLlmChatMessage(settings) }
 
-        val result = runCatching {
-            llmApiService.createChatCompletion(
-                settings = settings,
-                messages = requestMessages
+        val result = try {
+            Result.success(
+                llmApiService.createChatCompletion(
+                    settings = settings,
+                    messages = requestMessages
+                )
             )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            Result.failure(error)
         }
 
         val chatResult = result.getOrNull()
@@ -326,6 +420,7 @@ class ChatRepositoryImpl(
         )
         val completionTokens = result.completionTokens ?: estimateTokenCount(result.content)
         val totalTokens = result.totalTokens ?: (promptTokens + completionTokens)
+        val isEstimated = result.promptTokens == null || result.completionTokens == null
 
         modelUsageDao.insertUsage(
             ModelUsageEntity(
@@ -335,6 +430,7 @@ class ChatRepositoryImpl(
                 promptTokens = promptTokens,
                 completionTokens = completionTokens,
                 totalTokens = totalTokens,
+                isEstimated = isEstimated,
                 createdAt = createdAt
             )
         )
@@ -383,17 +479,29 @@ class ChatRepositoryImpl(
         }
         val fallbackNote = if (attachment?.type == "image" && imageDataUrl == null) {
             if (settings.supportsVision) {
-                "\n\n提示：图片无法读取或超过 4MB，已按附件说明发送。"
+                "\n\n提示：图片无法读取，或压缩后仍超过 4MB，已按附件说明发送。"
             } else {
                 "\n\n提示：当前模型配置未开启图片输入，图片已按附件说明发送。"
             }
         } else {
             ""
         }
+        val textPreviewNote = attachment?.textPreview
+            ?.takeIf { it.isNotBlank() }
+            ?.takeIf { preview -> !content.contains(preview.take(120)) }
+            ?.let { "\n\n附件可解析正文：\n$it" }
+            .orEmpty()
+        val unsupportedNote = when {
+            attachment?.type == "audio" ->
+                "\n\n提示：该消息包含录音附件。当前 OpenAI-compatible Chat Completions 通道不支持直接转写音频，模型只能看到录音文件名、大小和类型；需要语音内容时请先转写为文字。"
+            attachment?.type == "document" && attachment.textPreview.isNullOrBlank() ->
+                "\n\n提示：该文档没有可提取正文，模型只能看到文件名、大小和类型。建议上传 txt、md、PDF 或 DOCX。"
+            else -> ""
+        }
 
         return LlmChatMessage(
             role = role,
-            content = content + fallbackNote,
+            content = content + textPreviewNote + fallbackNote + unsupportedNote,
             imageDataUrls = listOfNotNull(imageDataUrl)
         )
     }
@@ -401,5 +509,7 @@ class ChatRepositoryImpl(
     private companion object {
         const val MAX_CONTEXT_MESSAGES = 20
         const val MAX_SUMMARY_MESSAGES = 12
+        const val TYPEWRITER_CHUNK_SIZE = 2
+        const val TYPEWRITER_DELAY_MS = 18L
     }
 }

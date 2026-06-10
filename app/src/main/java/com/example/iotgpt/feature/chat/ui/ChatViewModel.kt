@@ -4,14 +4,19 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.iotgpt.core.database.AppDatabase
+import com.example.iotgpt.core.database.entity.AgentTaskEntity
 import com.example.iotgpt.core.database.entity.ConversationEntity
 import com.example.iotgpt.core.database.entity.MessageEntity
 import com.example.iotgpt.core.notification.NotificationHelper
 import com.example.iotgpt.core.preferences.ModelProfile
 import com.example.iotgpt.core.preferences.SettingsStore
+import com.example.iotgpt.core.util.FileUtils
 import com.example.iotgpt.feature.chat.ChatRepository
 import com.example.iotgpt.feature.chat.ChatRepositoryImpl
+import java.util.UUID
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -27,8 +32,10 @@ class ChatViewModel(
     application: Application
 ) : AndroidViewModel(application) {
     private val settingsStore = SettingsStore(application)
+    private val database = AppDatabase.getInstance(application)
+    private val agentTaskDao = database.agentTaskDao()
     private val repository: ChatRepository = ChatRepositoryImpl(
-        database = AppDatabase.getInstance(application),
+        database = database,
         settingsStore = settingsStore,
         appContext = application,
         notificationHelper = NotificationHelper(application)
@@ -36,11 +43,13 @@ class ChatViewModel(
 
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState
+    private var responseJob: Job? = null
 
     init {
         observeConversations()
         observeCurrentMessages()
         observeModelProfiles()
+        observeClawCommandLogs()
     }
 
     fun createConversation() {
@@ -86,11 +95,29 @@ class ChatViewModel(
         }
     }
 
+    fun renameConversation(id: String, title: String) {
+        viewModelScope.launch {
+            runCatching { repository.renameConversation(id, title) }
+                .onSuccess {
+                    _uiState.update {
+                        it.copy(
+                            errorMessage = null,
+                            noticeMessage = "会话已重命名"
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update { it.copy(errorMessage = error.readableMessage()) }
+                }
+        }
+    }
+
     fun sendMessage(content: String) {
         val trimmed = content.trim()
         if (trimmed.isEmpty()) return
 
-        viewModelScope.launch {
+        responseJob?.cancel()
+        responseJob = viewModelScope.launch {
             _uiState.update { it.copy(isSaving = true, errorMessage = null) }
             runCatching {
                 repository.sendUserMessage(
@@ -106,6 +133,7 @@ class ChatViewModel(
                     )
                 }
             }.onFailure { error ->
+                if (error is CancellationException) return@onFailure
                 _uiState.update {
                     it.copy(
                         isSaving = false,
@@ -118,7 +146,8 @@ class ChatViewModel(
 
     fun sendAttachment(content: String, attachmentJson: String) {
         val trimmed = content.trim()
-        viewModelScope.launch {
+        responseJob?.cancel()
+        responseJob = viewModelScope.launch {
             _uiState.update { it.copy(isSaving = true, errorMessage = null) }
             runCatching {
                 repository.sendAttachmentMessage(
@@ -135,6 +164,7 @@ class ChatViewModel(
                     )
                 }
             }.onFailure { error ->
+                if (error is CancellationException) return@onFailure
                 _uiState.update {
                     it.copy(
                         isSaving = false,
@@ -147,7 +177,8 @@ class ChatViewModel(
 
     fun regenerateLastAssistant() {
         val conversationId = _uiState.value.currentConversationId ?: return
-        viewModelScope.launch {
+        responseJob?.cancel()
+        responseJob = viewModelScope.launch {
             _uiState.update { it.copy(isSaving = true, errorMessage = null) }
             runCatching {
                 repository.regenerateLastAssistant(conversationId)
@@ -159,6 +190,7 @@ class ChatViewModel(
                     )
                 }
             }.onFailure { error ->
+                if (error is CancellationException) return@onFailure
                 _uiState.update {
                     it.copy(
                         isSaving = false,
@@ -170,7 +202,8 @@ class ChatViewModel(
     }
 
     fun retryAssistantMessage(messageId: String) {
-        viewModelScope.launch {
+        responseJob?.cancel()
+        responseJob = viewModelScope.launch {
             _uiState.update { it.copy(isSaving = true, errorMessage = null) }
             runCatching {
                 repository.retryAssistantMessage(messageId)
@@ -182,6 +215,7 @@ class ChatViewModel(
                     )
                 }
             }.onFailure { error ->
+                if (error is CancellationException) return@onFailure
                 _uiState.update {
                     it.copy(
                         isSaving = false,
@@ -189,6 +223,154 @@ class ChatViewModel(
                     )
                 }
             }
+        }
+    }
+
+    fun stopAssistantResponse() {
+        responseJob?.cancel()
+        responseJob = null
+        viewModelScope.launch {
+            repository.stopStreamingAssistant(_uiState.value.currentConversationId)
+            _uiState.update {
+                it.copy(
+                    isSaving = false,
+                    noticeMessage = "已中断本次 AI 回复"
+                )
+            }
+        }
+    }
+
+    fun setClawMode(enabled: Boolean) {
+        _uiState.update {
+            it.copy(
+                isClawMode = enabled,
+                noticeMessage = if (enabled) {
+                    "Claw 本地模式已开启，输入拍照、短信、下载等指令将直接调用本地能力"
+                } else {
+                    "已切回 Agent 联网模式"
+                }
+            )
+        }
+    }
+
+    fun addClawUserCommand(content: String, resultHint: String? = null) {
+        val trimmed = content.trim()
+        if (trimmed.isEmpty()) return
+        viewModelScope.launch {
+            runCatching {
+                val conversationId = repository.addLocalMessage(
+                    conversationId = _uiState.value.currentConversationId,
+                    role = "user",
+                    content = trimmed
+                )
+                resultHint?.takeIf { it.isNotBlank() }?.let { hint ->
+                    repository.addLocalMessage(
+                        conversationId = conversationId,
+                        role = "system",
+                        content = hint
+                    )
+                }
+                conversationId
+            }.onSuccess { conversationId ->
+                _uiState.update {
+                    it.copy(
+                        currentConversationId = conversationId,
+                        errorMessage = null
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update { it.copy(errorMessage = error.readableMessage()) }
+            }
+        }
+    }
+
+    fun addClawResult(content: String, attachmentJson: String? = null) {
+        viewModelScope.launch {
+            runCatching {
+                repository.addLocalMessage(
+                    conversationId = _uiState.value.currentConversationId,
+                    role = "system",
+                    content = content,
+                    attachmentJson = attachmentJson
+                )
+            }.onSuccess { conversationId ->
+                _uiState.update {
+                    it.copy(
+                        currentConversationId = conversationId,
+                        noticeMessage = "Claw 本地任务已写入对话"
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update { it.copy(errorMessage = error.readableMessage()) }
+            }
+        }
+    }
+
+    fun addClawExchange(
+        userContent: String,
+        resultContent: String,
+        attachmentJson: String? = null
+    ) {
+        val trimmed = userContent.trim()
+        if (trimmed.isEmpty()) return
+        viewModelScope.launch {
+            runCatching {
+                val conversationId = repository.addLocalMessage(
+                    conversationId = _uiState.value.currentConversationId,
+                    role = "user",
+                    content = trimmed
+                )
+                repository.addLocalMessage(
+                    conversationId = conversationId,
+                    role = "system",
+                    content = resultContent,
+                    attachmentJson = attachmentJson
+                )
+                conversationId
+            }.onSuccess { conversationId ->
+                _uiState.update {
+                    it.copy(
+                        currentConversationId = conversationId,
+                        errorMessage = null,
+                        noticeMessage = "Claw 本地任务已写入对话"
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update { it.copy(errorMessage = error.readableMessage()) }
+            }
+        }
+    }
+
+    fun addClawPhotoResult(uri: android.net.Uri) {
+        val context = getApplication<Application>()
+        val attachmentJson = FileUtils.buildAttachmentJson(
+            context = context,
+            type = "image",
+            uri = uri
+        )
+        addClawResult(
+            content = "Claw 已完成自动拍照，图片如下。",
+            attachmentJson = attachmentJson
+        )
+    }
+
+    fun logClawCommand(
+        type: String,
+        status: String,
+        description: String
+    ) {
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            agentTaskDao.upsertTask(
+                AgentTaskEntity(
+                    id = UUID.randomUUID().toString(),
+                    type = type,
+                    status = status,
+                    description = description,
+                    createdAt = now,
+                    completedAt = now
+                )
+            )
         }
     }
 
@@ -268,6 +450,14 @@ class ChatViewModel(
         }
     }
 
+    private fun observeClawCommandLogs() {
+        viewModelScope.launch {
+            agentTaskDao.observeTasks().collect { tasks ->
+                _uiState.update { it.copy(clawTasks = tasks) }
+            }
+        }
+    }
+
     @OptIn(ExperimentalCoroutinesApi::class)
     private fun observeCurrentMessages() {
         viewModelScope.launch {
@@ -290,8 +480,10 @@ data class ChatUiState(
     val conversations: List<ConversationEntity> = emptyList(),
     val currentConversationId: String? = null,
     val messages: List<MessageEntity> = emptyList(),
+    val clawTasks: List<AgentTaskEntity> = emptyList(),
     val modelProfiles: List<ModelProfile> = emptyList(),
     val activeModelProfile: ModelProfile? = null,
+    val isClawMode: Boolean = false,
     val isSaving: Boolean = false,
     val errorMessage: String? = null,
     val noticeMessage: String? = null

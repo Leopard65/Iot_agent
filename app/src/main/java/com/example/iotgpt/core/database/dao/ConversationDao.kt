@@ -49,6 +49,20 @@ interface ConversationDao {
         messageCount: Int
     )
 
+    @Query(
+        """
+        UPDATE conversations
+        SET title = :title,
+            updatedAt = :updatedAt
+        WHERE id = :id
+        """
+    )
+    suspend fun renameConversation(
+        id: String,
+        title: String,
+        updatedAt: Long
+    )
+
     @Query("SELECT COUNT(*) FROM conversations")
     fun observeConversationCount(): Flow<Int>
 }

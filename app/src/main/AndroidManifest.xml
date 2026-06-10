@@ -20,6 +20,34 @@
         android:name="android.hardware.telephony"
         android:required="false" />
 
+    <queries>
+        <package android:name="com.tencent.mobileqq" />
+        <package android:name="com.tencent.tim" />
+        <package android:name="com.tencent.mm" />
+        <package android:name="com.eg.android.AlipayGphone" />
+        <package android:name="com.android.chrome" />
+        <package android:name="com.google.android.apps.chrome" />
+        <package android:name="com.autonavi.minimap" />
+        <package android:name="com.baidu.BaiduMap" />
+        <package android:name="com.taobao.taobao" />
+        <package android:name="com.tencent.qqmusic" />
+        <package android:name="com.tencent.wemeet.app" />
+        <package android:name="com.alibaba.android.rimet" />
+        <package android:name="com.ss.android.lark" />
+
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="http" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.WEB_SEARCH" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"

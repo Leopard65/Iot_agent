@@ -1,12 +1,18 @@
 package com.example.iotgpt.core.preferences
 
 import android.content.Context
+import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.MutablePreferences
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import java.io.File
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import org.json.JSONArray
@@ -18,13 +24,14 @@ private val Context.settingsDataStore by preferencesDataStore(name = "iotgpt_set
  * Stores user-editable model service configuration and app preferences.
  */
 class SettingsStore(
-    private val context: Context
+    context: Context,
+    private val dataStore: DataStore<Preferences> = context.settingsDataStore
 ) {
-    val modelProfiles: Flow<List<ModelProfile>> = context.settingsDataStore.data.map { preferences ->
+    val modelProfiles: Flow<List<ModelProfile>> = dataStore.data.map { preferences ->
         readProfiles(preferences)
     }
 
-    val activeModelProfile: Flow<ModelProfile> = context.settingsDataStore.data.map { preferences ->
+    val activeModelProfile: Flow<ModelProfile> = dataStore.data.map { preferences ->
         val profiles = readProfiles(preferences)
         val activeId = preferences[ACTIVE_MODEL_PROFILE_ID]
             ?: inferActiveProfileId(preferences, profiles)
@@ -35,22 +42,22 @@ class SettingsStore(
         profile.toLlmSettings()
     }
 
-    val themeMode: Flow<ThemeMode> = context.settingsDataStore.data.map { preferences ->
+    val themeMode: Flow<ThemeMode> = dataStore.data.map { preferences ->
         preferences[THEME_MODE]
             ?.let { ThemeMode.fromStorageValue(it) }
             ?: ThemeMode.System
     }
 
-    val onboardingCompleted: Flow<Boolean> = context.settingsDataStore.data.map { preferences ->
+    val onboardingCompleted: Flow<Boolean> = dataStore.data.map { preferences ->
         preferences[ONBOARDING_COMPLETED] ?: false
     }
 
-    val lastApiError: Flow<String?> = context.settingsDataStore.data.map { preferences ->
+    val lastApiError: Flow<String?> = dataStore.data.map { preferences ->
         preferences[LAST_API_ERROR]?.takeIf { it.isNotBlank() }
     }
 
     suspend fun saveLlmSettings(settings: LlmSettings) {
-        context.settingsDataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             val profiles = readProfiles(preferences)
             val activeId = preferences[ACTIVE_MODEL_PROFILE_ID]
                 ?: inferActiveProfileId(preferences, profiles)
@@ -75,7 +82,7 @@ class SettingsStore(
     }
 
     suspend fun upsertModelProfile(profile: ModelProfile, activate: Boolean = true) {
-        context.settingsDataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             val normalized = profile.normalized()
             val currentProfiles = readProfiles(preferences)
             val updatedProfiles = if (currentProfiles.any { it.id == normalized.id }) {
@@ -100,7 +107,7 @@ class SettingsStore(
     }
 
     suspend fun setActiveModelProfile(profileId: String) {
-        context.settingsDataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             val profiles = readProfiles(preferences)
             val activeProfile = profiles.firstOrNull { it.id == profileId } ?: return@edit
             preferences[ACTIVE_MODEL_PROFILE_ID] = activeProfile.id
@@ -111,7 +118,7 @@ class SettingsStore(
     suspend fun updateActiveProfileModel(model: String) {
         val normalizedModel = model.trim()
         require(normalizedModel.isNotBlank()) { "请填写模型名称" }
-        context.settingsDataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             val profiles = readProfiles(preferences)
             val activeId = preferences[ACTIVE_MODEL_PROFILE_ID]
                 ?: inferActiveProfileId(preferences, profiles)
@@ -130,7 +137,7 @@ class SettingsStore(
     }
 
     suspend fun deleteModelProfile(profileId: String) {
-        context.settingsDataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             val profiles = readProfiles(preferences)
             val activeId = preferences[ACTIVE_MODEL_PROFILE_ID]
                 ?: inferActiveProfileId(preferences, profiles)
@@ -144,19 +151,19 @@ class SettingsStore(
     }
 
     suspend fun saveThemeMode(themeMode: ThemeMode) {
-        context.settingsDataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             preferences[THEME_MODE] = themeMode.storageValue
         }
     }
 
     suspend fun saveOnboardingCompleted(completed: Boolean) {
-        context.settingsDataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             preferences[ONBOARDING_COMPLETED] = completed
         }
     }
 
     suspend fun saveLastApiError(message: String?) {
-        context.settingsDataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             if (message.isNullOrBlank()) {
                 preferences.remove(LAST_API_ERROR)
             } else {
@@ -178,6 +185,16 @@ class SettingsStore(
         private val THEME_MODE = stringPreferencesKey("theme_mode")
         private val ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
         private const val MAX_ERROR_CHARS = 240
+
+        fun createForTest(context: Context, file: File): SettingsStore {
+            return SettingsStore(
+                context = context,
+                dataStore = PreferenceDataStoreFactory.create(
+                    scope = CoroutineScope(Dispatchers.IO + SupervisorJob()),
+                    produceFile = { file }
+                )
+            )
+        }
 
         private fun readProfiles(preferences: Preferences): List<ModelProfile> {
             val raw = preferences[MODEL_PROFILES].orEmpty()

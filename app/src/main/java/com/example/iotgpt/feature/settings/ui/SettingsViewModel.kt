@@ -226,10 +226,24 @@ class SettingsViewModel(
         }
     }
 
-    fun testConnection() {
+    fun testConnection(profileId: String? = null) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isTesting = true, statusMessage = null) }
-            val settings = _uiState.value.toLlmSettings()
+            val state = _uiState.value
+            val profile = profileId?.let { id -> state.profiles.firstOrNull { it.id == id } }
+            val targetName = profile?.name ?: state.profileName
+            _uiState.update {
+                it.copy(
+                    isTesting = true,
+                    testingProfileId = profileId,
+                    statusMessage = null,
+                    connectionResults = if (profileId == null) {
+                        it.connectionResults
+                    } else {
+                        it.connectionResults + (profileId to "测试中...")
+                    }
+                )
+            }
+            val settings = profile?.toLlmSettings() ?: _uiState.value.toLlmSettings()
             val result = runCatching {
                 llmApiService.createChatCompletion(
                     settings = settings,
@@ -245,7 +259,16 @@ class SettingsViewModel(
             result.onSuccess {
                 settingsStore.saveLastApiError(null)
                 _uiState.update {
-                    it.copy(isTesting = false, statusMessage = "API 连接成功")
+                    it.copy(
+                        isTesting = false,
+                        testingProfileId = null,
+                        statusMessage = "API 连接成功",
+                        connectionResults = if (profileId == null) {
+                            it.connectionResults
+                        } else {
+                            it.connectionResults + (profileId to "$targetName 连接成功")
+                        }
+                    )
                 }
             }.onFailure { error ->
                 val message = error.message ?: "API 连接失败"
@@ -253,7 +276,13 @@ class SettingsViewModel(
                 _uiState.update {
                     it.copy(
                         isTesting = false,
-                        statusMessage = message
+                        testingProfileId = null,
+                        statusMessage = message,
+                        connectionResults = if (profileId == null) {
+                            it.connectionResults
+                        } else {
+                            it.connectionResults + (profileId to "连接失败：$message")
+                        }
                     )
                 }
             }
@@ -335,6 +364,15 @@ class SettingsViewModel(
         )
     }
 
+    private fun ModelProfile.toLlmSettings(): LlmSettings {
+        return LlmSettings(
+            baseUrl = baseUrl,
+            apiKey = apiKey,
+            model = model,
+            supportsVision = supportsVision
+        )
+    }
+
     private fun readVersionName(): String {
         return runCatching {
             appContext.packageManager
@@ -358,7 +396,9 @@ data class SettingsUiState(
     val themeMode: ThemeMode = ThemeMode.System,
     val isSaving: Boolean = false,
     val isTesting: Boolean = false,
+    val testingProfileId: String? = null,
     val isClearing: Boolean = false,
+    val connectionResults: Map<String, String> = emptyMap(),
     val debugInfo: String? = null,
     val statusMessage: String? = null
 ) {

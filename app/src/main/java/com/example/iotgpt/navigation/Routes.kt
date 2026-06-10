@@ -10,13 +10,11 @@ enum class MainRoute(
 ) {
     Chat("chat", "对话", "聊"),
     Stats("stats", "统计", "图"),
-    Agent("agent", "智能体", "智"),
     Settings("settings", "设置", "设")
 }
 
 val bottomNavigationRoutes = listOf(
     MainRoute.Chat,
     MainRoute.Stats,
-    MainRoute.Agent,
     MainRoute.Settings
 )

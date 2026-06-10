@@ -1,13 +1,25 @@
 package com.example.iotgpt.feature.settings.ui
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -18,10 +30,19 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.iotgpt.core.components.AppPage
@@ -41,6 +62,7 @@ fun SettingsScreen(
     val uiState by viewModel.uiState.collectAsState()
     var showApiKey by rememberSaveable { mutableStateOf(false) }
     var showClearConfirm by rememberSaveable { mutableStateOf(false) }
+    var showEditorDialog by rememberSaveable { mutableStateOf(false) }
 
     if (showClearConfirm) {
         AlertDialog(
@@ -66,6 +88,24 @@ fun SettingsScreen(
         )
     }
 
+    if (showEditorDialog) {
+        ProfileEditorDialog(
+            uiState = uiState,
+            showApiKey = showApiKey,
+            onShowApiKeyChange = { showApiKey = it },
+            onDismiss = { showEditorDialog = false },
+            onProfileNameChanged = viewModel::updateProfileName,
+            onProviderChanged = viewModel::updateProvider,
+            onBaseUrlChanged = viewModel::updateBaseUrl,
+            onApiKeyChanged = viewModel::updateApiKey,
+            onModelChanged = viewModel::updateModel,
+            onSupportsVisionChanged = viewModel::updateSupportsVision,
+            onApplyPreset = viewModel::applyPreset,
+            onSave = viewModel::saveSettings,
+            onTest = { viewModel.testConnection() }
+        )
+    }
+
     AppPage(
         title = "设置",
         subtitle = "模型服务、主题模式与调试操作",
@@ -80,243 +120,84 @@ fun SettingsScreen(
             )
         }
     ) {
-        AppSectionCard(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                text = "模型配置列表",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
+        SettingsStatusBanner(message = uiState.statusMessage)
+
+        ActiveProfilePanel(
+            profile = uiState.activeProfile,
+            profileCount = uiState.profiles.size,
+            onEdit = {
+                uiState.activeProfile?.let { profile ->
+                    viewModel.editProfile(profile.id)
+                    showEditorDialog = true
+                }
+            },
+            onTest = {
+                uiState.activeProfile?.let { viewModel.testConnection(it.id) }
+            },
+            isTesting = uiState.testingProfileId == uiState.activeProfileId
+        )
+
+        AppSectionCard(
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(12.dp)
+        ) {
+            SectionHeader(
+                title = "模型配置",
+                subtitle = "管理多套 OpenAI 兼容服务，聊天页会使用当前启用项。",
+                trailing = {
+                    Button(
+                        onClick = {
+                            viewModel.startNewProfile()
+                            showEditorDialog = true
+                        }
+                    ) {
+                        Text("新增")
+                    }
+                }
             )
             if (uiState.profiles.isEmpty()) {
                 Text("暂无模型配置", color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
-                uiState.profiles.forEach { profile ->
+                uiState.profiles.forEachIndexed { index, profile ->
+                    if (index > 0) {
+                        HorizontalDivider()
+                    }
                     ModelProfileRow(
                         profile = profile,
                         selected = profile.id == uiState.activeProfileId,
                         onActivate = { viewModel.activateProfile(profile.id) },
-                        onEdit = { viewModel.editProfile(profile.id) },
-                        onDelete = { viewModel.deleteProfile(profile.id) }
-                    )
-                }
-            }
-            Button(onClick = viewModel::startNewProfile) {
-                Text("新增模型配置")
-            }
-        }
-
-        AppSectionCard(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                text = "编辑模型配置",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            OutlinedTextField(
-                value = uiState.profileName,
-                onValueChange = viewModel::updateProfileName,
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                label = { Text("配置名称") },
-                placeholder = { Text("例如 DeepSeek 课堂演示") }
-            )
-            OutlinedTextField(
-                value = uiState.provider,
-                onValueChange = viewModel::updateProvider,
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                label = { Text("服务商") },
-                placeholder = { Text("DeepSeek / OpenAI / Custom") }
-            )
-            OutlinedTextField(
-                value = uiState.baseUrl,
-                onValueChange = viewModel::updateBaseUrl,
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                label = { Text("Base URL") },
-                placeholder = { Text("https://api.deepseek.com") }
-            )
-            OutlinedTextField(
-                value = uiState.apiKey,
-                onValueChange = viewModel::updateApiKey,
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                label = { Text("API Key") },
-                placeholder = { Text("输入后仅在本机保存") },
-                visualTransformation = if (showApiKey) {
-                    VisualTransformation.None
-                } else {
-                    PasswordVisualTransformation()
-                },
-                trailingIcon = {
-                    TextButton(onClick = { showApiKey = !showApiKey }) {
-                        Text(if (showApiKey) "隐藏" else "显示")
-                    }
-                }
-            )
-            OutlinedTextField(
-                value = uiState.model,
-                onValueChange = viewModel::updateModel,
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                label = { Text("模型名称") }
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "支持图片输入",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = "仅在所选 OpenAI 兼容服务支持 vision 时开启",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Checkbox(
-                    checked = uiState.supportsVision,
-                    onCheckedChange = viewModel::updateSupportsVision
-                )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    enabled = !uiState.isSaving,
-                    onClick = viewModel::saveSettings
-                ) {
-                    Text(if (uiState.isSaving) "保存中" else "保存并设为当前")
-                }
-                Button(
-                    enabled = !uiState.isTesting,
-                    onClick = viewModel::testConnection
-                ) {
-                    Text(if (uiState.isTesting) "测试中" else "测试连接")
-                }
-            }
-            uiState.statusMessage?.let {
-                Text(
-                    text = it,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
-        AppSectionCard(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                text = "预置模型",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ModelPresetChip(
-                        label = "DeepSeek",
-                        selected = uiState.model == "deepseek-chat",
-                        onClick = {
-                            viewModel.applyPreset(
-                                name = "DeepSeek",
-                                provider = "DeepSeek",
-                                baseUrl = "https://api.deepseek.com",
-                                model = "deepseek-chat"
-                            )
-                        }
-                    )
-                    ModelPresetChip(
-                        label = "通义",
-                        selected = uiState.model.startsWith("qwen"),
-                        onClick = {
-                            viewModel.applyPreset(
-                                name = "通义千问",
-                                provider = "DashScope",
-                                baseUrl = "https://dashscope.aliyuncs.com/compatible-mode",
-                                model = "qwen-plus"
-                            )
-                        }
-                    )
-                    ModelPresetChip(
-                        label = "MiMo",
-                        selected = uiState.model.contains("mimo", ignoreCase = true),
-                        onClick = {
-                            viewModel.applyPreset(
-                                name = "小米 MiMo",
-                                provider = "MiMo",
-                                baseUrl = "https://api.xiaomimimo.com/v1",
-                                model = "mimo-v2-pro"
-                            )
-                        }
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ModelPresetChip(
-                        label = "OpenAI",
-                        selected = uiState.baseUrl.contains("api.openai.com", ignoreCase = true),
-                        onClick = {
-                            viewModel.applyPreset(
-                                name = "OpenAI",
-                                provider = "OpenAI",
-                                baseUrl = "https://api.openai.com/v1",
-                                model = "gpt-4.1-mini"
-                            )
-                        }
-                    )
-                    ModelPresetChip(
-                        label = "自定义",
-                        selected = false,
-                        onClick = {
-                            viewModel.applyPreset(
-                                name = "自定义模型",
-                                provider = "Custom",
-                                baseUrl = "",
-                                model = ""
-                            )
-                        }
+                        onEdit = {
+                            viewModel.editProfile(profile.id)
+                            showEditorDialog = true
+                        },
+                        onDelete = { viewModel.deleteProfile(profile.id) },
+                        isTesting = uiState.testingProfileId == profile.id,
+                        connectionResult = uiState.connectionResults[profile.id],
+                        onTest = { viewModel.testConnection(profile.id) }
                     )
                 }
             }
         }
 
-        AppSectionCard(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                text = "外观",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ThemeMode.entries.forEach { mode ->
-                    FilterChip(
-                        selected = uiState.themeMode == mode,
-                        onClick = { viewModel.updateThemeMode(mode) },
-                        label = { Text(mode.label) }
-                    )
-                }
-            }
-        }
+        ThemePreferencePanel(
+            selectedMode = uiState.themeMode,
+            onSelect = viewModel::updateThemeMode
+        )
 
-        AppSectionCard(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                text = "维护",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = viewModel::exportDebugInfo) {
-                    Text("导出调试信息")
-                }
-                Button(
-                    enabled = !uiState.isClearing,
-                    onClick = { showClearConfirm = true }
-                ) {
-                    Text(if (uiState.isClearing) "清空中" else "清空历史会话")
-                }
-            }
-            Text("IoTGPT 1.0 · AIoT Assistant")
-        }
+        MaintenancePanel(
+            isClearing = uiState.isClearing,
+            onExportDebugInfo = viewModel::exportDebugInfo,
+            onClearHistory = { showClearConfirm = true }
+        )
 
         uiState.debugInfo?.let { debugInfo ->
-            AppSectionCard(modifier = Modifier.fillMaxWidth()) {
+            AppSectionCard(
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(10.dp)
+            ) {
                 Text(
                     text = "调试信息",
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
@@ -330,16 +211,443 @@ fun SettingsScreen(
 }
 
 @Composable
+private fun SettingsStatusBanner(message: String?) {
+    if (message.isNullOrBlank()) return
+    Text(
+        text = message,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.secondaryContainer)
+            .padding(horizontal = 12.dp, vertical = 9.dp),
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSecondaryContainer,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis
+    )
+}
+
+@Composable
+private fun ActiveProfilePanel(
+    profile: ModelProfile?,
+    profileCount: Int,
+    onEdit: () -> Unit,
+    onTest: () -> Unit,
+    isTesting: Boolean
+) {
+    AppSectionCard(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(12.dp)
+    ) {
+        SectionHeader(
+            title = "当前模型",
+            subtitle = "发送对话、摘要和图片理解时会使用这套配置。",
+            trailing = {
+                StatusPill(
+                    text = "$profileCount 套配置",
+                    tone = StatusTone.Neutral
+                )
+            }
+        )
+        if (profile == null) {
+            Text("还没有可用模型配置", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            return@AppSectionCard
+        }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = profile.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "${profile.provider} · ${profile.model}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                StatusPill(
+                    text = if (profile.apiKey.isBlank()) "Key 未配" else "Key 就绪",
+                    tone = if (profile.apiKey.isBlank()) StatusTone.Neutral else StatusTone.Success
+                )
+            }
+            Text(
+                text = profile.baseUrl,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                StatusPill(
+                    text = if (profile.supportsVision) "图片输入已开" else "文本模式",
+                    tone = if (profile.supportsVision) StatusTone.Primary else StatusTone.Neutral
+                )
+                TextButton(onClick = onEdit) {
+                    Text("编辑")
+                }
+                TextButton(
+                    enabled = !isTesting,
+                    onClick = onTest
+                ) {
+                    Text(if (isTesting) "测试中" else "测试连接")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionHeader(
+    title: String,
+    subtitle: String,
+    trailing: @Composable (() -> Unit)? = null
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Top
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        trailing?.invoke()
+    }
+}
+
+@Composable
+private fun ThemePreferencePanel(
+    selectedMode: ThemeMode,
+    onSelect: (ThemeMode) -> Unit
+) {
+    AppSectionCard(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(12.dp)
+    ) {
+        SectionHeader(
+            title = "外观",
+            subtitle = "即时切换浅色、深色，或跟随系统设置。"
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            ThemeMode.entries.forEach { mode ->
+                FilterChip(
+                    selected = selectedMode == mode,
+                    onClick = { onSelect(mode) },
+                    label = { Text(mode.label, style = MaterialTheme.typography.labelMedium) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MaintenancePanel(
+    isClearing: Boolean,
+    onExportDebugInfo: () -> Unit,
+    onClearHistory: () -> Unit
+) {
+    AppSectionCard(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(12.dp)
+    ) {
+        SectionHeader(
+            title = "维护与隐私",
+            subtitle = "导出调试摘要不会包含 API Key 明文；清空历史会删除本机会话和模型统计。"
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = onExportDebugInfo) {
+                Text("导出调试")
+            }
+            Button(
+                enabled = !isClearing,
+                onClick = onClearHistory
+            ) {
+                Text(if (isClearing) "清空中" else "清空历史")
+            }
+        }
+        Text(
+            text = "IoTGPT 1.0 · AIoT Assistant",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun ProfileEditorDialog(
+    uiState: SettingsUiState,
+    showApiKey: Boolean,
+    onShowApiKeyChange: (Boolean) -> Unit,
+    onDismiss: () -> Unit,
+    onProfileNameChanged: (String) -> Unit,
+    onProviderChanged: (String) -> Unit,
+    onBaseUrlChanged: (String) -> Unit,
+    onApiKeyChanged: (String) -> Unit,
+    onModelChanged: (String) -> Unit,
+    onSupportsVisionChanged: (Boolean) -> Unit,
+    onApplyPreset: (String, String, String, String) -> Unit,
+    onSave: () -> Unit,
+    onTest: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = if (uiState.editingProfileId == null) "新增模型配置" else "编辑模型配置",
+                style = MaterialTheme.typography.titleMedium
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 520.dp)
+                    .heightIn(max = 560.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                ModelPresetSection(uiState = uiState, onApplyPreset = onApplyPreset)
+                OutlinedTextField(
+                    value = uiState.profileName,
+                    onValueChange = onProfileNameChanged,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodySmall,
+                    label = { Text("配置名称") },
+                    placeholder = { Text("例如 DeepSeek 课堂演示") }
+                )
+                OutlinedTextField(
+                    value = uiState.provider,
+                    onValueChange = onProviderChanged,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodySmall,
+                    label = { Text("服务商") }
+                )
+                OutlinedTextField(
+                    value = uiState.baseUrl,
+                    onValueChange = onBaseUrlChanged,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodySmall,
+                    label = { Text("Base URL") },
+                    placeholder = { Text("https://api.deepseek.com") }
+                )
+                OutlinedTextField(
+                    value = uiState.apiKey,
+                    onValueChange = onApiKeyChanged,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodySmall,
+                    label = { Text("API Key") },
+                    placeholder = { Text("输入后仅在本机保存") },
+                    visualTransformation = if (showApiKey) {
+                        VisualTransformation.None
+                    } else {
+                        PasswordVisualTransformation()
+                    },
+                    trailingIcon = {
+                        TextButton(onClick = { onShowApiKeyChange(!showApiKey) }) {
+                            Text(if (showApiKey) "隐藏" else "显示")
+                        }
+                    }
+                )
+                OutlinedTextField(
+                    value = uiState.model,
+                    onValueChange = onModelChanged,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodySmall,
+                    label = { Text("模型名称") }
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "支持图片输入",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "仅在服务支持 vision 时开启",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Checkbox(
+                        checked = uiState.supportsVision,
+                        onCheckedChange = onSupportsVisionChanged
+                    )
+                }
+                uiState.statusMessage?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = !uiState.isSaving,
+                onClick = onSave
+            ) {
+                Text(if (uiState.isSaving) "保存中" else "保存")
+            }
+        },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                TextButton(
+                    enabled = !uiState.isTesting,
+                    onClick = onTest
+                ) {
+                    Text(if (uiState.isTesting) "测试中" else "测试连接")
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("关闭")
+                }
+            }
+        }
+    )
+}
+
+@Composable
+private fun ModelPresetSection(
+    uiState: SettingsUiState,
+    onApplyPreset: (String, String, String, String) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = "预置模型",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            ModelPresetChip(
+                label = "DeepSeek",
+                selected = uiState.model == "deepseek-chat",
+                onClick = {
+                    onApplyPreset(
+                        "DeepSeek",
+                        "DeepSeek",
+                        "https://api.deepseek.com",
+                        "deepseek-chat"
+                    )
+                }
+            )
+            ModelPresetChip(
+                label = "通义",
+                selected = uiState.model.startsWith("qwen"),
+                onClick = {
+                    onApplyPreset(
+                        "通义千问",
+                        "DashScope",
+                        "https://dashscope.aliyuncs.com/compatible-mode",
+                        "qwen-plus"
+                    )
+                }
+            )
+            ModelPresetChip(
+                label = "MiMo",
+                selected = uiState.model.contains("mimo", ignoreCase = true),
+                onClick = {
+                    onApplyPreset(
+                        "小米 MiMo",
+                        "MiMo",
+                        "https://api.xiaomimimo.com/v1",
+                        "mimo-v2-pro"
+                    )
+                }
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            ModelPresetChip(
+                label = "OpenAI",
+                selected = uiState.baseUrl.contains("api.openai.com", ignoreCase = true),
+                onClick = {
+                    onApplyPreset(
+                        "OpenAI",
+                        "OpenAI",
+                        "https://api.openai.com/v1",
+                        "gpt-4.1-mini"
+                    )
+                }
+            )
+            ModelPresetChip(
+                label = "自定义",
+                selected = false,
+                onClick = {
+                    onApplyPreset(
+                        "自定义模型",
+                        "Custom",
+                        "",
+                        ""
+                    )
+                }
+            )
+        }
+    }
+}
+
+@Composable
 private fun ModelProfileRow(
     profile: ModelProfile,
     selected: Boolean,
     onActivate: () -> Unit,
     onEdit: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    isTesting: Boolean,
+    connectionResult: String?,
+    onTest: () -> Unit
 ) {
     Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(
+                if (selected) {
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainerHigh
+                }
+            )
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -348,44 +656,224 @@ private fun ModelProfileRow(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = profile.name,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = "${profile.provider} · ${profile.model}",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = profile.baseUrl,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
-            StatusPill(
-                text = if (selected) "当前" else "可选",
-                tone = if (selected) StatusTone.Success else StatusTone.Neutral
-            )
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                StatusPill(
+                    text = if (selected) "当前" else "可选",
+                    tone = if (selected) StatusTone.Success else StatusTone.Neutral
+                )
+                connectionResult?.let { result ->
+                    Text(
+                        text = result,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = when {
+                            result.contains("成功") -> MaterialTheme.colorScheme.primary
+                            result.contains("测试中") -> MaterialTheme.colorScheme.onSurfaceVariant
+                            else -> MaterialTheme.colorScheme.error
+                        },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
         }
         Text(
             text = "${profile.maskedKeyStatus()} · 图片输入${if (profile.supportsVision) "已开启" else "未开启"}",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Button(
                 enabled = !selected,
-                onClick = onActivate
+                onClick = onActivate,
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
             ) {
-                Text("设为当前")
+                ProfileActionIcon(
+                    action = ProfileAction.Activate,
+                    color = MaterialTheme.colorScheme.onPrimary
+                )
+                Text(
+                    text = "启用",
+                    style = MaterialTheme.typography.labelMedium
+                )
             }
-            TextButton(onClick = onEdit) {
-                Text("编辑")
-            }
-            TextButton(
+            ProfileActionIconButton(
+                action = ProfileAction.Edit,
+                enabled = true,
+                onClick = onEdit
+            )
+            ProfileActionIconButton(
+                action = ProfileAction.Test,
+                enabled = !isTesting,
+                onClick = onTest
+            )
+            ProfileActionIconButton(
+                action = ProfileAction.Delete,
                 enabled = !selected,
                 onClick = onDelete
-            ) {
-                Text("删除")
+            )
+        }
+    }
+}
+
+private enum class ProfileAction(
+    val contentDescription: String
+) {
+    Activate("启用模型配置"),
+    Edit("编辑模型配置"),
+    Test("测试连接"),
+    Delete("删除模型配置")
+}
+
+@Composable
+private fun ProfileActionIconButton(
+    action: ProfileAction,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    IconButton(
+        enabled = enabled,
+        onClick = onClick,
+        modifier = Modifier
+            .size(36.dp)
+            .semantics { contentDescription = action.contentDescription }
+    ) {
+        ProfileActionIcon(
+            action = action,
+            color = if (enabled) {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+            }
+        )
+    }
+}
+
+@Composable
+private fun ProfileActionIcon(
+    action: ProfileAction,
+    color: Color
+) {
+    Canvas(modifier = Modifier.size(18.dp)) {
+        val stroke = Stroke(width = 1.8.dp.toPx())
+        when (action) {
+            ProfileAction.Activate -> {
+                val path = Path().apply {
+                    moveTo(size.width * 0.34f, size.height * 0.24f)
+                    lineTo(size.width * 0.34f, size.height * 0.76f)
+                    lineTo(size.width * 0.76f, size.height * 0.50f)
+                    close()
+                }
+                drawPath(path = path, color = color, style = stroke)
+            }
+            ProfileAction.Edit -> {
+                drawRoundRect(
+                    color = color,
+                    topLeft = Offset(size.width * 0.18f, size.height * 0.24f),
+                    size = androidx.compose.ui.geometry.Size(size.width * 0.48f, size.height * 0.58f),
+                    style = stroke
+                )
+                drawLine(
+                    color = color,
+                    start = Offset(size.width * 0.50f, size.height * 0.66f),
+                    end = Offset(size.width * 0.82f, size.height * 0.34f),
+                    strokeWidth = stroke.width
+                )
+                drawLine(
+                    color = color,
+                    start = Offset(size.width * 0.75f, size.height * 0.28f),
+                    end = Offset(size.width * 0.86f, size.height * 0.39f),
+                    strokeWidth = stroke.width
+                )
+            }
+            ProfileAction.Test -> {
+                drawCircle(
+                    color = color,
+                    radius = size.minDimension * 0.32f,
+                    center = Offset(size.width * 0.50f, size.height * 0.50f),
+                    style = stroke
+                )
+                drawLine(
+                    color = color,
+                    start = Offset(size.width * 0.50f, size.height * 0.18f),
+                    end = Offset(size.width * 0.50f, size.height * 0.04f),
+                    strokeWidth = stroke.width
+                )
+                drawLine(
+                    color = color,
+                    start = Offset(size.width * 0.50f, size.height * 0.82f),
+                    end = Offset(size.width * 0.50f, size.height * 0.96f),
+                    strokeWidth = stroke.width
+                )
+                drawLine(
+                    color = color,
+                    start = Offset(size.width * 0.18f, size.height * 0.50f),
+                    end = Offset(size.width * 0.04f, size.height * 0.50f),
+                    strokeWidth = stroke.width
+                )
+                drawLine(
+                    color = color,
+                    start = Offset(size.width * 0.82f, size.height * 0.50f),
+                    end = Offset(size.width * 0.96f, size.height * 0.50f),
+                    strokeWidth = stroke.width
+                )
+            }
+            ProfileAction.Delete -> {
+                drawLine(
+                    color = color,
+                    start = Offset(size.width * 0.22f, size.height * 0.30f),
+                    end = Offset(size.width * 0.78f, size.height * 0.30f),
+                    strokeWidth = stroke.width
+                )
+                drawRoundRect(
+                    color = color,
+                    topLeft = Offset(size.width * 0.28f, size.height * 0.36f),
+                    size = androidx.compose.ui.geometry.Size(size.width * 0.44f, size.height * 0.46f),
+                    style = stroke
+                )
+                drawLine(
+                    color = color,
+                    start = Offset(size.width * 0.40f, size.height * 0.22f),
+                    end = Offset(size.width * 0.60f, size.height * 0.22f),
+                    strokeWidth = stroke.width
+                )
+                drawLine(
+                    color = color,
+                    start = Offset(size.width * 0.42f, size.height * 0.46f),
+                    end = Offset(size.width * 0.42f, size.height * 0.72f),
+                    strokeWidth = stroke.width
+                )
+                drawLine(
+                    color = color,
+                    start = Offset(size.width * 0.58f, size.height * 0.46f),
+                    end = Offset(size.width * 0.58f, size.height * 0.72f),
+                    strokeWidth = stroke.width
+                )
             }
         }
     }
