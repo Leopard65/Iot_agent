@@ -139,7 +139,9 @@ class SettingsViewModel(
             it.copy(
                 supportsAudioTranscription = value,
                 transcriptionModel = if (value) {
-                    it.transcriptionModel.ifBlank { SettingsStore.DEFAULT_TRANSCRIPTION_MODEL }
+                    it.transcriptionModel
+                        .takeUnless { model -> model.isBlank() || shouldReplaceDefaultTranscriptionModel(model, it.provider, it.baseUrl) }
+                        ?: inferTranscriptionModel(it.provider, it.baseUrl)
                 } else {
                     it.transcriptionModel
                 },
@@ -164,11 +166,11 @@ class SettingsViewModel(
                 provider = provider,
                 baseUrl = baseUrl,
                 model = model,
-                supportsVision = false,
+                supportsVision = inferVisionSupport(provider, model),
                 supportsReasoning = inferReasoningSupport(provider, model),
                 reasoningEnabled = false,
                 supportsAudioTranscription = inferAudioTranscriptionSupport(provider, baseUrl),
-                transcriptionModel = SettingsStore.DEFAULT_TRANSCRIPTION_MODEL,
+                transcriptionModel = inferTranscriptionModel(provider, baseUrl),
                 statusMessage = null
             )
         }
@@ -483,9 +485,32 @@ class SettingsViewModel(
             .any { marker.contains(it) }
     }
 
+    private fun inferVisionSupport(provider: String, model: String): Boolean {
+        val marker = "$provider $model".lowercase()
+        return listOf("mimo-v2.5", "gpt-4", "vision", "qwen-vl", "vl").any { marker.contains(it) }
+    }
+
     private fun inferAudioTranscriptionSupport(provider: String, baseUrl: String): Boolean {
         val marker = "$provider $baseUrl".lowercase()
-        return listOf("openai", "whisper").any { marker.contains(it) }
+        return listOf("openai", "whisper", "mimo", "xiaomimimo").any { marker.contains(it) }
+    }
+
+    private fun inferTranscriptionModel(provider: String, baseUrl: String): String {
+        val marker = "$provider $baseUrl".lowercase()
+        return if (marker.contains("mimo") || marker.contains("xiaomimimo")) {
+            SettingsStore.MIMO_TRANSCRIPTION_MODEL
+        } else {
+            SettingsStore.DEFAULT_TRANSCRIPTION_MODEL
+        }
+    }
+
+    private fun shouldReplaceDefaultTranscriptionModel(
+        model: String,
+        provider: String,
+        baseUrl: String
+    ): Boolean {
+        return model == SettingsStore.DEFAULT_TRANSCRIPTION_MODEL &&
+            inferTranscriptionModel(provider, baseUrl) != SettingsStore.DEFAULT_TRANSCRIPTION_MODEL
     }
 
     private fun readVersionName(): String {

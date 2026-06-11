@@ -198,6 +198,7 @@ class SettingsStore(
         const val DEFAULT_BASE_URL = "https://api.deepseek.com"
         const val DEFAULT_MODEL = "deepseek-chat"
         const val DEFAULT_TRANSCRIPTION_MODEL = "whisper-1"
+        const val MIMO_TRANSCRIPTION_MODEL = "mimo-v2.5-asr"
 
         private val BASE_URL = stringPreferencesKey("api_base_url")
         private val API_KEY = stringPreferencesKey("api_key")
@@ -289,7 +290,7 @@ class SettingsStore(
                 supportsReasoning = inferLegacySupportsReasoning(preferences),
                 reasoningEnabled = false,
                 supportsAudioTranscription = inferLegacySupportsAudioTranscription(preferences),
-                transcriptionModel = DEFAULT_TRANSCRIPTION_MODEL
+                transcriptionModel = inferLegacyTranscriptionModel(preferences)
             ).normalized()
 
             return listOf(legacy)
@@ -345,7 +346,16 @@ class SettingsStore(
 
         private fun inferLegacySupportsAudioTranscription(preferences: Preferences): Boolean {
             val marker = "${inferLegacyProvider(preferences)} ${preferences[BASE_URL].orEmpty()}".lowercase()
-            return listOf("openai", "whisper").any { marker.contains(it) }
+            return listOf("openai", "whisper", "mimo", "xiaomimimo").any { marker.contains(it) }
+        }
+
+        private fun inferLegacyTranscriptionModel(preferences: Preferences): String {
+            val marker = "${inferLegacyProvider(preferences)} ${preferences[BASE_URL].orEmpty()}".lowercase()
+            return if (marker.contains("mimo") || marker.contains("xiaomimimo")) {
+                MIMO_TRANSCRIPTION_MODEL
+            } else {
+                DEFAULT_TRANSCRIPTION_MODEL
+            }
         }
 
         private fun ModelProfile.isUnusedBuiltInPreset(): Boolean {

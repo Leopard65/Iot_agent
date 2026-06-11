@@ -171,6 +171,69 @@ class OpenAiCompatibleClientTest {
     }
 
     @Test
+    fun sendsMimoAsrAsChatCompletionInputAudio() = runBlocking {
+        server.enqueue(chatResponse(content = "模拟转写文本"))
+
+        val transcript = client.transcribeAudio(
+            settings = settings(
+                baseUrl = server.url("/v1").toString(),
+                model = "mimo-v2.5",
+                supportsAudioTranscription = true,
+                transcriptionModel = "mimo-v2.5-asr"
+            ),
+            audio = LlmAudioInput(
+                fileName = "recording.wav",
+                mimeType = "audio/wav",
+                bytes = byteArrayOf(1, 2, 3)
+            )
+        )
+
+        assertEquals("模拟转写文本", transcript)
+
+        val request = server.takeRequest()
+        assertEquals("/v1/chat/completions", request.path)
+        assertEquals("test-key", request.getHeader("api-key"))
+        assertEquals(null, request.getHeader("Authorization"))
+
+        val body = JSONObject(request.body.readUtf8())
+        assertEquals("mimo-v2.5-asr", body.getString("model"))
+        assertEquals("auto", body.getJSONObject("asr_options").getString("language"))
+        val content = body.getJSONArray("messages")
+            .getJSONObject(0)
+            .getJSONArray("content")
+            .getJSONObject(0)
+        assertEquals("input_audio", content.getString("type"))
+        assertTrue(
+            content.getJSONObject("input_audio")
+                .getString("data")
+                .startsWith("data:audio/wav;base64,")
+        )
+    }
+
+    @Test
+    fun rejectsUnsupportedMimoAsrAudioFormatBeforeRequest() = runBlocking {
+        val error = runCatching {
+            client.transcribeAudio(
+                settings = settings(
+                    baseUrl = server.url("/v1").toString(),
+                    model = "mimo-v2.5",
+                    supportsAudioTranscription = true,
+                    transcriptionModel = "mimo-v2.5-asr"
+                ),
+                audio = LlmAudioInput(
+                    fileName = "recording.m4a",
+                    mimeType = "audio/mp4",
+                    bytes = byteArrayOf(1, 2, 3)
+                )
+            )
+        }.exceptionOrNull()
+
+        assertTrue(error is LlmApiException)
+        assertTrue(error?.message.orEmpty().contains("WAV 或 MP3"))
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test
     fun exposesReadableApiErrorMessage() = runBlocking {
         server.enqueue(
             MockResponse()
@@ -235,6 +298,7 @@ class OpenAiCompatibleClientTest {
 
     private fun settings(
         baseUrl: String,
+        model: String = "test-model",
         reasoningEnabled: Boolean = false,
         supportsAudioTranscription: Boolean = false,
         transcriptionModel: String = "whisper-1"
@@ -242,7 +306,7 @@ class OpenAiCompatibleClientTest {
         return LlmSettings(
             baseUrl = baseUrl,
             apiKey = "test-key",
-            model = "test-model",
+            model = model,
             supportsVision = true,
             reasoningEnabled = reasoningEnabled,
             supportsAudioTranscription = supportsAudioTranscription,
@@ -250,7 +314,7 @@ class OpenAiCompatibleClientTest {
         )
     }
 
-    private fun chatResponse(): MockResponse {
+    private fun chatResponse(content: String = "ok"): MockResponse {
         return MockResponse()
             .setResponseCode(200)
             .setHeader("Content-Type", "application/json")
@@ -260,7 +324,7 @@ class OpenAiCompatibleClientTest {
                   "choices": [
                     {
                       "message": {
-                        "content": "ok"
+                        "content": "$content"
                       }
                     }
                   ],

@@ -44,7 +44,7 @@ object FileUtils {
     }
 
     fun createAudioUri(context: Context): Pair<File, Uri> {
-        val file = createCacheFile(context, "audio", "recording", ".m4a")
+        val file = createCacheFile(context, "audio", "recording", ".wav")
         return file to file.toContentUri(context)
     }
 

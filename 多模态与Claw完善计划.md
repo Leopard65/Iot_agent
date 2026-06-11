@@ -34,12 +34,15 @@
 - 模型配置新增“支持思考模式”和“默认开启思考”字段；聊天页对支持思考的当前模型显示开关，开关状态会持久化到当前模型配置。
 - OpenAI-compatible 请求体在思考模式开启时会实际携带 `enable_thinking=true` 和 `thinking.type=enabled`，并新增单测锁定该行为。
 - 备份与迁移规则显式包含 Room database、DataStore 和 shared preferences，并开启跨版本恢复，降低重新安装或设备迁移时丢失聊天记录/API 配置的风险。
-- 接入 OpenAI-compatible 语音转写：模型配置可开启语音转写并填写转写模型，录音附件会先调用 `/v1/audio/transcriptions`，再把转写文本加入聊天上下文。
+- 接入语音转写：模型配置可开启语音转写并填写转写模型；OpenAI/Whisper 风格服务走 `/v1/audio/transcriptions`，MiMo ASR 走 `/v1/chat/completions` 的 `input_audio`，再把转写文本加入聊天上下文。
 - 录音转写成功后会把文本缓存回附件 JSON，重新生成回复时复用缓存，避免重复转写。
 - 新增录音附件 UI 端到端仪器测试：真实录音控件生成附件，连接本地 MockWebServer 完成 mock 转写和 mock 聊天响应。
 - App-Leap 扩展拨号、地图导航、应用市场搜索/详情等系统级动作，并补充对应包可见性声明和单元测试。
 - 新增 `.gitattributes` 明确 Kotlin、XML、Markdown、Gradle 等文本文件行尾策略，减少 Windows 下 LF/CRLF 噪音。
 - 允许 cleartext HTTP，便于 Android 真机连接本地 OpenAI-compatible 服务或仪器测试 MockWebServer；真实线上服务仍建议使用 HTTPS。
+- 根据 MiMo 文档适配 `mimo-v2.5-asr`：MiMo 语音转写改走 `/v1/chat/completions` 的 `input_audio.data` data URL 格式，并使用 `api-key` header。
+- App 内录音从 AAC/M4A 改为 16kHz 单声道 PCM WAV，符合 MiMo ASR 当前 WAV/MP3 输入限制。
+- MiMo 预置模型更新为 `mimo-v2.5`，默认开启图片输入能力，并默认使用 `mimo-v2.5-asr` 作为转写模型。
 
 ## 后续待做
 
@@ -51,6 +54,8 @@
 - 根据真实 vision 模型测试结果，继续调优图片压缩尺寸和质量参数。
 - Android Studio 若使用“卸载后安装”、`pm clear`、清除应用数据或更换 applicationId，系统仍会删除本地 Room/DataStore 数据；需要在本机运行配置中关闭会清数据的部署选项，并用真实升级安装流程复测数据保留。
 - 对 DeepSeek/Qwen/MiMo 等真实服务商分别做思考模式 smoke test，确认各家的 OpenAI-compatible 字段兼容性；如某服务商字段不同，需要按 provider/model 增加适配。
+- 使用真实 MiMo TokenPlan API Key 做 smoke test：验证 `mimo-v2.5` 图片理解、`mimo-v2.5-asr` WAV 转写、`api-key` 鉴权头，以及实际返回字段兼容性。
+- 如果要支持用户导入非 WAV/MP3 的音频文件，需要增加本地转码或格式限制提示；当前 App 内录音已改为 WAV。
 
 ## 测试记录
 
@@ -125,3 +130,7 @@
 - 2026-06-11 第三十七阶段 Claw 真机回归：通过，运行 `clawOpenMissingAppWritesFailureInsteadOfBrowserFallback`，验证 App-Leap 动作扩展后，明确打开不存在应用仍不会回退到浏览器搜索。
 - 2026-06-11 第三十七阶段 敏感信息/占位扫描：通过，源码未发现 TODO/FIXME 或疑似硬编码 API Key；命中项均为文档中记录的历史测试命令。
 - 2026-06-11 第三十七阶段 `git diff --check`：通过，无空白错误；新增 `.gitattributes` 后工作区提示后续将按 LF 归一化。
+- 2026-06-11 第三十八阶段：根据 MiMo TokenPlan 文档修正语音转写适配。处理：新增 MiMo ASR `input_audio` chat completions 请求、MiMo `api-key` 鉴权、MiMo 预置模型/转写模型默认值、WAV 录音输出和不支持格式的提前拦截。
+- 2026-06-11 第三十八阶段 `testDebugUnitTest --tests com.example.iotgpt.core.network.OpenAiCompatibleClientTest`：通过，新增覆盖 MiMo ASR data URL 请求体、`api-key` header、`asr_options.language=auto` 和 M4A 格式拒绝。
+- 2026-06-11 第三十八阶段 `assembleDebug`：通过，WAV 录音器与 MiMo 适配代码编译正常。
+- 2026-06-11 第三十八阶段 模拟器录音端到端回归：未执行成功，原因是本机 AVD `Medium_Phone_2` 启动后停在 ADB `authorizing`，需要人工确认授权。已关闭该模拟器进程；后续需用已授权模拟器或真机复跑 `recordingAttachmentSendsThroughMockTranscriptionAndChatService`。

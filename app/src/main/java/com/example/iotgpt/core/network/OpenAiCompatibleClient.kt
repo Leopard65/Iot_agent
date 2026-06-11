@@ -2,6 +2,7 @@ package com.example.iotgpt.core.network
 
 import com.example.iotgpt.core.preferences.LlmSettings
 import java.io.IOException
+import java.util.Base64
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -70,7 +71,11 @@ class OpenAiCompatibleClient(
             throw LlmApiException("录音文件为空，无法转写")
         }
 
-        val request = buildAudioTranscriptionRequest(settings, audio)
+        val request = if (settings.usesMimoAsr()) {
+            buildMimoAudioTranscriptionRequest(settings, audio)
+        } else {
+            buildAudioTranscriptionRequest(settings, audio)
+        }
         try {
             client.newCall(request).execute().use { response ->
                 val rawBody = response.body?.string().orEmpty()
@@ -148,8 +153,43 @@ class OpenAiCompatibleClient(
 
         return Request.Builder()
             .url(chatCompletionsUrl(settings.baseUrl))
-            .header("Authorization", "Bearer ${settings.apiKey.trim()}")
             .header("Content-Type", "application/json")
+            .addAuthHeaders(settings)
+            .post(bodyJson.toString().toRequestBody(JSON_MEDIA_TYPE))
+            .build()
+    }
+
+    private fun buildMimoAudioTranscriptionRequest(
+        settings: LlmSettings,
+        audio: LlmAudioInput
+    ): Request {
+        val mimeType = audio.mimeTypeForMimo()
+        val dataUrl = "data:$mimeType;base64,${Base64.getEncoder().encodeToString(audio.bytes)}"
+        val content = JSONArray().put(
+            JSONObject()
+                .put("type", "input_audio")
+                .put(
+                    "input_audio",
+                    JSONObject().put("data", dataUrl)
+                )
+        )
+        val messages = JSONArray().put(
+            JSONObject()
+                .put("role", "user")
+                .put("content", content)
+        )
+        val bodyJson = JSONObject()
+            .put("model", settings.transcriptionModel.ifBlank { "mimo-v2.5-asr" })
+            .put("messages", messages)
+            .put(
+                "asr_options",
+                JSONObject().put("language", "auto")
+            )
+
+        return Request.Builder()
+            .url(chatCompletionsUrl(settings.baseUrl))
+            .header("Content-Type", "application/json")
+            .addAuthHeaders(settings)
             .post(bodyJson.toString().toRequestBody(JSON_MEDIA_TYPE))
             .build()
     }
@@ -178,7 +218,7 @@ class OpenAiCompatibleClient(
 
         return Request.Builder()
             .url(audioTranscriptionsUrl(settings.baseUrl))
-            .header("Authorization", "Bearer ${settings.apiKey.trim()}")
+            .addAuthHeaders(settings)
             .post(body)
             .build()
     }
@@ -245,11 +285,10 @@ class OpenAiCompatibleClient(
     }
 
     private fun parseTranscriptionResult(rawBody: String): String {
-        val text = JSONObject(rawBody).optString("text").trim()
-        if (text.isBlank()) {
-            throw LlmApiException("语音转写返回内容为空")
-        }
-        return text
+        val json = JSONObject(rawBody)
+        val text = json.optString("text").trim()
+        if (text.isNotBlank()) return text
+        return parseChatResult(rawBody).content
     }
 
     private fun parseSseLine(line: String): LlmChatStreamChunk? {
@@ -306,6 +345,43 @@ class OpenAiCompatibleClient(
             trimmed.endsWith("/audio/transcriptions") -> trimmed
             trimmed.endsWith("/v1") -> "$trimmed/audio/transcriptions"
             else -> "$trimmed/v1/audio/transcriptions"
+        }
+    }
+
+    private fun Request.Builder.addAuthHeaders(settings: LlmSettings): Request.Builder {
+        val key = settings.apiKey.trim()
+        return if (settings.usesMimoAuth()) {
+            header("api-key", key)
+        } else {
+            header("Authorization", "Bearer $key")
+        }
+    }
+
+    private fun LlmSettings.usesMimoAsr(): Boolean {
+        return isMimoBaseUrl() || transcriptionModel.contains("mimo", ignoreCase = true)
+    }
+
+    private fun LlmSettings.isMimoBaseUrl(): Boolean {
+        return baseUrl.contains("xiaomimimo", ignoreCase = true)
+    }
+
+    private fun LlmSettings.usesMimoAuth(): Boolean {
+        return isMimoBaseUrl() ||
+            model.contains("mimo", ignoreCase = true) ||
+            transcriptionModel.contains("mimo", ignoreCase = true)
+    }
+
+    private fun LlmAudioInput.mimeTypeForMimo(): String {
+        val normalized = mimeType.orEmpty().lowercase()
+        val lowerName = fileName.lowercase()
+        return when {
+            normalized in setOf("audio/wav", "audio/x-wav", "audio/wave") ||
+                lowerName.endsWith(".wav") -> "audio/wav"
+            normalized in setOf("audio/mpeg", "audio/mp3") ||
+                lowerName.endsWith(".mp3") -> "audio/mpeg"
+            else -> throw LlmApiException(
+                "MiMo ASR 仅支持 WAV 或 MP3 音频，请使用 App 内录音生成 WAV，或上传 WAV/MP3 文件。"
+            )
         }
     }
 

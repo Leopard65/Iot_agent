@@ -54,12 +54,12 @@ class ChatRepositoryAttachmentInstrumentedTest {
         try {
             harness.repository.sendAttachmentMessage(
                 conversationId = null,
-                content = "用户上传录音：recording.m4a，大小 12.0 KB，类型 audio/mp4。",
+                content = "用户上传录音：recording.wav，大小 12.0 KB，类型 audio/wav。",
                 attachmentJson = attachmentJson(
                     type = "audio",
                     uri = "content://example/audio",
-                    displayName = "recording.m4a",
-                    mimeType = "audio/mp4"
+                    displayName = "recording.wav",
+                    mimeType = "audio/wav"
                 )
             )
 
@@ -83,12 +83,12 @@ class ChatRepositoryAttachmentInstrumentedTest {
 
             harness.repository.sendAttachmentMessage(
                 conversationId = null,
-                content = "用户上传录音：recording.m4a，大小 12.0 KB，类型 audio/mp4。",
+                content = "用户上传录音：recording.wav，大小 12.0 KB，类型 audio/wav。",
                 attachmentJson = attachmentJson(
                     type = "audio",
                     uri = audioUri.toString(),
-                    displayName = "recording.m4a",
-                    mimeType = "audio/mp4"
+                    displayName = "recording.wav",
+                    mimeType = "audio/wav"
                 )
             )
 
@@ -113,12 +113,12 @@ class ChatRepositoryAttachmentInstrumentedTest {
 
             val conversationId = harness.repository.sendAttachmentMessage(
                 conversationId = null,
-                content = "用户上传录音：recording.m4a，大小 12.0 KB，类型 audio/mp4。",
+                content = "用户上传录音：recording.wav，大小 12.0 KB，类型 audio/wav。",
                 attachmentJson = attachmentJson(
                     type = "audio",
                     uri = audioUri.toString(),
-                    displayName = "recording.m4a",
-                    mimeType = "audio/mp4"
+                    displayName = "recording.wav",
+                    mimeType = "audio/wav"
                 )
             )
 
@@ -252,7 +252,7 @@ class ChatRepositoryAttachmentInstrumentedTest {
     }
 
     private fun createTinyAudio(context: Context): Uri {
-        val file = File(context.cacheDir, "recording_${System.nanoTime()}.m4a")
+        val file = File(context.cacheDir, "recording_${System.nanoTime()}.wav")
         file.writeBytes(byteArrayOf(0, 1, 2, 3, 4, 5, 6, 7))
         return Uri.fromFile(file)
     }

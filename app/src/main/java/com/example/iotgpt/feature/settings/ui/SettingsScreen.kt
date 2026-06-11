@@ -597,7 +597,7 @@ private fun ProfileEditorDialog(
                         singleLine = true,
                         textStyle = MaterialTheme.typography.bodySmall,
                         label = { Text("语音转写模型") },
-                        placeholder = { Text("whisper-1") }
+                        placeholder = { Text("mimo-v2.5-asr 或 whisper-1") }
                     )
                 }
                 uiState.statusMessage?.let {
@@ -677,7 +677,7 @@ private fun ModelPresetSection(
                         "小米 MiMo",
                         "MiMo",
                         "https://api.xiaomimimo.com/v1",
-                        "mimo-v2-pro"
+                        "mimo-v2.5"
                     )
                 }
             )

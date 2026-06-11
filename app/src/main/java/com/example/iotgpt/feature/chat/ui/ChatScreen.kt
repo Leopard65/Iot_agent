@@ -203,7 +203,7 @@ fun ChatScreen(
         val unsupportedReason = if (type == "document" && textPreview.isNullOrBlank()) {
             FileUtils.unsupportedDocumentReason(info)
         } else if (type == "audio") {
-            "录音已保存为音频附件；当前聊天接口不能直接听音频，需要接入语音转写后才能解析语音内容。"
+            "录音已保存为 WAV 音频附件；若当前模型配置开启语音转写，发送后会先转文字再进入对话上下文。"
         } else {
             null
         }
