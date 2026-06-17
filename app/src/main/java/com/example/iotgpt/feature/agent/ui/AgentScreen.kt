@@ -8,6 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -31,6 +32,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -39,6 +41,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -157,7 +160,7 @@ fun AgentScreen(
 
     AppPage(
         title = "Claw 智能体",
-        subtitle = "本地工具调度、系统 Intent 与硬件能力演示",
+        subtitle = "本地工具调度、系统 Intent 与硬件能力",
         trailing = {
             StatusPill("${uiState.tasks.size} 条日志", tone = StatusTone.Success)
         }
@@ -230,7 +233,8 @@ private fun LatestTaskLogCard(
     AppSectionCard(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 text = "最新任务日志",
@@ -247,7 +251,7 @@ private fun LatestTaskLogCard(
         if (latestTask == null) {
             TerminalLogLine("[claw-agent] >> waiting for tool call _")
         } else {
-            TerminalTaskLog(latestTask)
+            TaskStatusCard(task = latestTask)
         }
     }
 }
@@ -356,7 +360,7 @@ private fun SmsAgentCard(
     onExecute: () -> Unit
 ) {
     AppSectionCard(modifier = Modifier.fillMaxWidth()) {
-        CardTitle("安全短信演示", "需要 SEND_SMS，执行前必须二次确认")
+        CardTitle("安全短信能力", "需要 SEND_SMS，执行前必须二次确认")
         OutlinedTextField(
             value = phoneNumber,
             onValueChange = onPhoneChanged,
@@ -385,7 +389,7 @@ private fun CameraAgentCard(
 ) {
     val context = LocalContext.current
     AppSectionCard(modifier = Modifier.fillMaxWidth()) {
-        CardTitle("自动拍照演示", "需要 CAMERA，用户点击后调用系统相机")
+        CardTitle("自动拍照能力", "需要 CAMERA，用户点击后调用系统相机")
         Button(onClick = onExecute) {
             Text("执行拍照")
         }
@@ -422,7 +426,7 @@ private fun DownloadAgentCard(
     onExecute: () -> Unit
 ) {
     AppSectionCard(modifier = Modifier.fillMaxWidth()) {
-        CardTitle("下载服务演示", "使用 WorkManager 下载，完成后触发通知")
+        CardTitle("下载服务能力", "使用 WorkManager 下载，完成后触发通知")
         OutlinedTextField(
             value = url,
             onValueChange = onUrlChanged,
@@ -443,16 +447,26 @@ private fun CardTitle(title: String, subtitle: String) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top
         ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = subtitle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
             StatusPill("可执行", tone = StatusTone.Primary)
         }
-        Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -467,6 +481,60 @@ private fun TerminalTaskLog(task: AgentTaskEntity) {
     ) {
         TerminalLogLine("[claw-agent] >> tool=${task.type} status=${task.status}", padded = false)
         TerminalLogLine("[system] >> ${task.description}", padded = false)
+    }
+}
+
+@Composable
+private fun TaskStatusCard(task: AgentTaskEntity) {
+    val tone = agentTaskStatusTone(task.status)
+    val borderColor = when (task.status.lowercase()) {
+        "completed" -> MaterialTheme.colorScheme.primary
+        "running" -> MaterialTheme.colorScheme.tertiary
+        "failed" -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.outline
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .border(1.dp, borderColor.copy(alpha = 0.28f), RoundedCornerShape(8.dp))
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = agentTaskTypeLabel(task.type),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = task.type,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            StatusPill(agentTaskStatusLabel(task.status), tone = tone)
+        }
+        Text(
+            text = task.description,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -522,19 +590,36 @@ private fun SectorProgressView(progress: Int) {
 
 @Composable
 private fun TaskLogRow(task: AgentTaskEntity) {
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(task.type, fontWeight = FontWeight.SemiBold)
-            StatusPill(task.status)
-        }
-        Text(
-            text = task.description,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
-        )
+    TaskStatusCard(task = task)
+}
+
+private fun agentTaskTypeLabel(type: String): String {
+    return when (type) {
+        "sms" -> "短信任务"
+        "camera" -> "拍照任务"
+        "download" -> "下载任务"
+        "document" -> "文档采集"
+        "audio" -> "录音采集"
+        "app-leap" -> "跨应用任务"
+        "unknown" -> "未识别任务"
+        else -> type
+    }
+}
+
+private fun agentTaskStatusLabel(status: String): String {
+    return when (status.lowercase()) {
+        "completed" -> "成功"
+        "running" -> "执行中"
+        "failed" -> "失败"
+        "cancelled" -> "已取消"
+        else -> status
+    }
+}
+
+private fun agentTaskStatusTone(status: String): StatusTone {
+    return when (status.lowercase()) {
+        "completed" -> StatusTone.Success
+        "running" -> StatusTone.Primary
+        else -> StatusTone.Neutral
     }
 }

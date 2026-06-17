@@ -99,7 +99,7 @@ fun LaunchWelcomeScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    text = "AIoT Assistant",
+                    text = "lot",
                     style = MaterialTheme.typography.headlineMedium,
                     color = onSurface,
                     fontWeight = FontWeight.SemiBold,

@@ -27,13 +27,13 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.example.iotgpt.feature.agent.ui.AgentScreen
 import com.example.iotgpt.feature.chat.ui.ChatScreen
 import com.example.iotgpt.feature.settings.ui.SettingsScreen
 import com.example.iotgpt.feature.stats.ui.StatsScreen
@@ -43,7 +43,7 @@ import com.example.iotgpt.core.preferences.SettingsStore
 import kotlinx.coroutines.launch
 
 /**
- * Root navigation graph for the AIoT Assistant app shell.
+ * Root navigation graph for the lot app shell.
  */
 @Composable
 fun AppNavigation() {
@@ -101,7 +101,13 @@ fun AppNavigation() {
                         icon = {
                             BusinessNavIcon(route = destination, selected = selected)
                         },
-                        label = { Text(destination.label) }
+                        label = {
+                            Text(
+                                text = destination.label,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     )
                 }
             }
@@ -117,9 +123,6 @@ fun AppNavigation() {
             }
             composable(MainRoute.Stats.route) {
                 StatsScreen()
-            }
-            composable(MainRoute.Agent.route) {
-                AgentScreen()
             }
             composable(MainRoute.Settings.route) {
                 SettingsScreen()
@@ -147,7 +150,6 @@ private fun BusinessNavIcon(
             when (route) {
                 MainRoute.Chat -> drawConsultingIcon(accent)
                 MainRoute.Stats -> drawAnalyticsIcon(accent, selected)
-                MainRoute.Agent -> drawAgentChipIcon(accent, selected)
                 MainRoute.Settings -> drawControlDialIcon(accent, selected)
             }
         }
@@ -179,36 +181,6 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawConsultingIcon(
         cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.dp.toPx(), 4.dp.toPx()),
         style = Stroke(width = 1.7.dp.toPx())
     )
-}
-
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawAgentChipIcon(
-    color: Color,
-    selected: Boolean
-) {
-    val chipTopLeft = Offset(size.width * 0.26f, size.height * 0.24f)
-    val chipSize = Size(size.width * 0.48f, size.height * 0.48f)
-    val pinAlpha = if (selected) 0.96f else 0.54f
-    drawRoundRect(
-        color = color.copy(alpha = 0.15f),
-        topLeft = chipTopLeft,
-        size = chipSize,
-        cornerRadius = androidx.compose.ui.geometry.CornerRadius(5.dp.toPx(), 5.dp.toPx())
-    )
-    drawRoundRect(
-        color = color,
-        topLeft = chipTopLeft,
-        size = chipSize,
-        cornerRadius = androidx.compose.ui.geometry.CornerRadius(5.dp.toPx(), 5.dp.toPx()),
-        style = Stroke(width = 1.8.dp.toPx())
-    )
-    repeat(4) { index ->
-        val t = 0.32f + index * 0.12f
-        drawLine(color.copy(alpha = pinAlpha), Offset(size.width * 0.14f, size.height * t), Offset(size.width * 0.25f, size.height * t), 1.6.dp.toPx(), StrokeCap.Round)
-        drawLine(color.copy(alpha = pinAlpha), Offset(size.width * 0.75f, size.height * t), Offset(size.width * 0.86f, size.height * t), 1.6.dp.toPx(), StrokeCap.Round)
-        drawLine(color.copy(alpha = pinAlpha), Offset(size.width * t, size.height * 0.14f), Offset(size.width * t, size.height * 0.25f), 1.6.dp.toPx(), StrokeCap.Round)
-        drawLine(color.copy(alpha = pinAlpha), Offset(size.width * t, size.height * 0.75f), Offset(size.width * t, size.height * 0.86f), 1.6.dp.toPx(), StrokeCap.Round)
-    }
-    drawCircle(color, radius = 2.6.dp.toPx(), center = Offset(size.width * 0.5f, size.height * 0.5f))
 }
 
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawAnalyticsIcon(

@@ -348,7 +348,7 @@ class SettingsViewModel(
                     messages = listOf(
                         LlmChatMessage(
                             role = "user",
-                            content = "请用一句话回复：AIoT Assistant 连接成功。"
+                            content = "请用一句话回复：lot 连接成功。"
                         )
                     ),
                     temperature = 0.2
@@ -393,6 +393,7 @@ class SettingsViewModel(
             runCatching {
                 database.conversationDao().clearConversations()
                 database.modelUsageDao().clearUsage()
+                database.agentTaskDao().clearTasks()
             }.onSuccess {
                 _uiState.update {
                     it.copy(
@@ -420,7 +421,7 @@ class SettingsViewModel(
                 val profiles = _uiState.value.profiles
                 val lastApiError = settingsStore.lastApiError.first()
                 buildString {
-                    appendLine("IoTGPT Debug Info")
+                    appendLine("lot Debug Info")
                     appendLine("Version: ${readVersionName()}")
                     appendLine("Active profile: ${_uiState.value.activeProfile?.name.orEmpty()}")
                     appendLine("Active model: ${_uiState.value.activeProfile?.model.orEmpty()}")

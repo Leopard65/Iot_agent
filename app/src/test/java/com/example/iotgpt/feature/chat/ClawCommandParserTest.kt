@@ -51,7 +51,7 @@ class ClawCommandParserTest {
         assertEquals(
             ClawCommand.Sms(
                 phoneNumber = "13800138000",
-                content = "AIoT Assistant 短信演示"
+                content = "lot 短信确认"
             ),
             parseClawCommand("sms 13800138000")
         )

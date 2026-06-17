@@ -39,4 +39,7 @@ interface AgentTaskDao {
 
     @Query("SELECT COUNT(*) FROM agent_tasks WHERE status = :status")
     fun observeTaskCountByStatus(status: String): Flow<Int>
+
+    @Query("DELETE FROM agent_tasks")
+    suspend fun clearTasks()
 }

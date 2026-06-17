@@ -277,8 +277,8 @@ class ChatRepositoryImpl(
             .takeLast(MAX_CONTEXT_MESSAGES)
             .map { it.toLlmChatMessage(settings) }
 
+        val streamedContent = StringBuilder()
         val streamResult = try {
-            val streamedContent = StringBuilder()
             var promptTokens: Int? = null
             var completionTokens: Int? = null
             var totalTokens: Int? = null
@@ -354,15 +354,21 @@ class ChatRepositoryImpl(
             streamResult.exceptionOrNull() ?: IllegalStateException("API 请求失败")
         )
         settingsStore.saveLastApiError(readableError)
+        val partialContent = streamedContent.toString().trim()
+        val finalContent = if (partialContent.isBlank()) {
+            readableError
+        } else {
+            "$partialContent\n\n⚠️ $readableError"
+        }
         val errorMessage = MessageEntity(
             id = messageId,
             conversationId = conversationId,
             role = "assistant",
-            content = readableError,
+            content = finalContent,
             attachmentJson = null,
             createdAt = createdAt,
             isStreaming = false,
-            tokenCount = null
+            tokenCount = estimateTokenCount(finalContent)
         )
         messageDao.upsertMessage(errorMessage)
         return errorMessage

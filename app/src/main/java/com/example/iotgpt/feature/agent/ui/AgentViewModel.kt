@@ -324,7 +324,7 @@ class AgentViewModel(
 
 data class AgentUiState(
     val phoneNumber: String = "",
-    val smsContent: String = "AIoT Assistant 短信演示",
+    val smsContent: String = "lot 短信确认",
     val downloadUrl: String = "",
     val downloadProgress: Int = 0,
     val lastPhotoUri: String? = null,

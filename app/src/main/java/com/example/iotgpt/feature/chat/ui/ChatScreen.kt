@@ -18,6 +18,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -75,6 +76,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -200,13 +203,6 @@ fun ChatScreen(
         } else {
             null
         }
-        val unsupportedReason = if (type == "document" && textPreview.isNullOrBlank()) {
-            FileUtils.unsupportedDocumentReason(info)
-        } else if (type == "audio") {
-            "录音已保存为 WAV 音频附件；若当前模型配置开启语音转写，发送后会先转文字再进入对话上下文。"
-        } else {
-            null
-        }
         val json = FileUtils.buildAttachmentJson(
             context = context,
             type = type,
@@ -218,24 +214,16 @@ fun ChatScreen(
             "audio" -> "录音"
             else -> "文档"
         }
-        val previewText = textPreview?.let {
-            "\n\n可读取的文本内容：\n$it"
-        }.orEmpty()
-        val unsupportedText = unsupportedReason?.let {
-            "\n\n解析提示：$it"
-        }.orEmpty()
         val sizeLabel = FileUtils.formatSize(info.sizeBytes)
         val mimeType = info.mimeType ?: "未知"
-        val content = "用户上传$typeLabel：${info.displayName}，大小 $sizeLabel，类型 $mimeType。$previewText$unsupportedText"
+        val content = "用户上传$typeLabel：${info.displayName}，大小 $sizeLabel，类型 $mimeType。"
         pendingAttachment = PendingAttachment(
             type = type,
             json = json,
             displayName = info.displayName,
             sizeLabel = sizeLabel,
             mimeType = info.mimeType,
-            baseContent = content,
-            textPreview = textPreview,
-            extractionNote = unsupportedReason
+            baseContent = content
         )
         viewModel.showNotice("$typeLabel 已添加，可直接发送，也可以继续输入说明后一起发送")
         return true
@@ -622,7 +610,7 @@ fun ChatScreen(
                 val sms = ClawSmsCommand(
                     userContent = messageText,
                     phoneNumber = command.phoneNumber,
-                    content = command.content.ifBlank { "AIoT Assistant 短信演示" }
+                    content = command.content.ifBlank { "lot 短信确认" }
                 )
                 if (ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED) {
                     pendingClawSms = sms
@@ -778,7 +766,7 @@ fun ChatScreen(
         }
     ) {
         AppPage(
-            title = uiState.currentConversation?.title ?: "AIoT 对话",
+            title = uiState.currentConversation?.title ?: "lot 对话",
             subtitle = "",
             scrollable = false,
             showHeader = false,
@@ -897,7 +885,7 @@ fun ChatScreen(
                             message = message,
                             onCopy = { text ->
                                 clipboardManager.setPrimaryClip(
-                                    ClipData.newPlainText("AIoT message", text)
+                                    ClipData.newPlainText("lot message", text)
                                 )
                                 viewModel.showNotice("消息已复制")
                             },
@@ -934,7 +922,7 @@ fun ChatScreen(
                 }
             }
 
-            AppSectionCard(contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)) {
+            AppSectionCard(contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)) {
                 val clawAccent = Color(0xFF39FF88)
                 pendingAttachment?.let { attachment ->
                     PendingAttachmentCard(
@@ -961,7 +949,7 @@ fun ChatScreen(
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     OutlinedTextField(
@@ -982,6 +970,7 @@ fun ChatScreen(
                         placeholder = {
                             Text(if (uiState.isClawMode) "Claw 指令" else "输入消息")
                         },
+                        shape = RoundedCornerShape(8.dp),
                         colors = if (uiState.isClawMode) {
                             OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = clawAccent,
@@ -994,11 +983,21 @@ fun ChatScreen(
                         }
                     )
                     Box {
-                        TextButton(
-                            modifier = Modifier.testTag(AppTestTags.CHAT_ATTACH_MENU),
+                        IconButton(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .testTag(AppTestTags.CHAT_ATTACH_MENU)
+                                .semantics { contentDescription = "添加附件" }
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant),
                             onClick = { attachmentMenuExpanded = true }
                         ) {
-                            Text("+")
+                            Text(
+                                text = "+",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = FontWeight.SemiBold
+                            )
                         }
                         DropdownMenu(
                             expanded = attachmentMenuExpanded,
@@ -1041,6 +1040,7 @@ fun ChatScreen(
                     if (uiState.isSaving && !uiState.isClawMode) {
                         Button(
                             onClick = viewModel::stopAssistantResponse,
+                            modifier = Modifier.height(44.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                         ) {
                             Text("停止")
@@ -1049,7 +1049,9 @@ fun ChatScreen(
                         Button(
                             enabled = (draft.isNotBlank() || pendingAttachment != null),
                             onClick = ::submitMessage,
-                            modifier = Modifier.testTag(AppTestTags.CHAT_SEND),
+                            modifier = Modifier
+                                .height(44.dp)
+                                .testTag(AppTestTags.CHAT_SEND),
                             colors = if (uiState.isClawMode) {
                                 ButtonDefaults.buttonColors(
                                     containerColor = clawAccent,
@@ -1074,9 +1076,7 @@ private data class PendingAttachment(
     val displayName: String,
     val sizeLabel: String,
     val mimeType: String?,
-    val baseContent: String,
-    val textPreview: String?,
-    val extractionNote: String?
+    val baseContent: String
 )
 
 private data class ClawSmsCommand(
@@ -1629,25 +1629,43 @@ private fun ClawTaskLogItem(task: AgentTaskEntity) {
         "running" -> StatusTone.Primary
         else -> StatusTone.Neutral
     }
+    val statusColor = when (task.status.lowercase()) {
+        "completed" -> MaterialTheme.colorScheme.primary
+        "running" -> MaterialTheme.colorScheme.tertiary
+        "failed" -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.outline
+    }
+    val shape = RoundedCornerShape(8.dp)
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+            .background(MaterialTheme.colorScheme.surface, shape)
+            .border(1.dp, statusColor.copy(alpha = 0.28f), shape)
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.Top
         ) {
-            Text(
-                text = clawTaskTypeLabel(task.type),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = clawTaskTypeLabel(task.type),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = formatTime(task.createdAt),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             StatusPill(
                 text = clawTaskStatusLabel(task.status),
                 tone = statusTone
@@ -1659,11 +1677,6 @@ private fun ClawTaskLogItem(task: AgentTaskEntity) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 3,
             overflow = TextOverflow.Ellipsis
-        )
-        Text(
-            text = formatTime(task.createdAt),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
@@ -1886,6 +1899,27 @@ private fun MessageBubble(
 ) {
     val isUser = message.role == "user"
     val isClaw = message.role == "system"
+    val bubbleColor = when {
+        isUser -> MaterialTheme.colorScheme.primaryContainer
+        isClaw -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.74f)
+        else -> MaterialTheme.colorScheme.surfaceContainerHigh
+    }
+    val outlineColor = when {
+        isUser -> MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+        isClaw -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.24f)
+        else -> MaterialTheme.colorScheme.outline.copy(alpha = 0.30f)
+    }
+    val labelText = when {
+        isUser -> "用户"
+        isClaw -> "Claw 本地"
+        message.isStreaming -> "AI 助手 · 思考中"
+        else -> "AI 助手"
+    }
+    val labelColor = when {
+        isUser -> MaterialTheme.colorScheme.onPrimaryContainer
+        isClaw -> MaterialTheme.colorScheme.onSecondaryContainer
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
     val canRetry = !isUser &&
         !isClaw &&
         !message.isStreaming &&
@@ -1896,36 +1930,40 @@ private fun MessageBubble(
     ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth(0.78f)
+                .fillMaxWidth(if (isUser) 0.80f else 0.86f)
                 .widthIn(max = 560.dp)
                 .background(
-                    color = if (isUser) {
-                        MaterialTheme.colorScheme.primaryContainer
-                    } else if (isClaw) {
-                        Color(0xFFE9FFF0)
-                    } else {
-                        MaterialTheme.colorScheme.surfaceContainerHigh
-                    },
+                    color = bubbleColor,
                     shape = RoundedCornerShape(8.dp)
                 )
-                .padding(12.dp)
+                .border(1.dp, outlineColor, RoundedCornerShape(8.dp))
+                .padding(horizontal = 12.dp, vertical = 10.dp)
                 .heightIn(min = 36.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = labelText,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = labelColor,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = formatTime(message.createdAt),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = labelColor.copy(alpha = 0.64f)
+                )
+            }
             FileUtils.parseAttachmentJson(message.attachmentJson)?.let { attachment ->
                 AttachmentCard(attachment)
             }
-            Text(
-                text = when {
-                    isUser -> "用户"
-                    isClaw -> "Claw 本地"
-                    message.isStreaming -> "AI 助手 · 思考中"
-                    else -> "AI 助手"
-                },
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.SemiBold
-            )
             if (message.isStreaming) {
                 if (message.content.isBlank()) {
                     Text(
@@ -1943,7 +1981,7 @@ private fun MessageBubble(
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
             if (!message.isStreaming && message.content.isNotBlank()) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     TextButton(onClick = { onCopy(message.content) }) {
                         Text("复制")
                     }
@@ -2013,93 +2051,123 @@ private fun PendingAttachmentCard(
     attachment: PendingAttachment,
     onRemove: () -> Unit
 ) {
+    val tint = attachmentTint(attachment.type)
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .testTag(AppTestTags.CHAT_PENDING_ATTACHMENT)
             .background(
-                color = MaterialTheme.colorScheme.secondaryContainer,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = RoundedCornerShape(8.dp)
+            )
+            .border(
+                width = 1.dp,
+                color = tint.copy(alpha = 0.32f),
                 shape = RoundedCornerShape(8.dp)
             )
             .padding(10.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = when (attachment.type) {
-                        "image" -> "待发送图片"
-                        "audio" -> "待发送录音"
-                        else -> "待发送文档"
-                    },
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                    fontWeight = FontWeight.SemiBold
+            Row(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                AttachmentTypeBadge(
+                    text = pendingAttachmentLabel(attachment.type),
+                    tint = tint
                 )
-                Text(
-                    text = attachment.displayName,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = "${attachment.sizeLabel} · ${attachment.mimeType ?: "未知类型"}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer
-                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Text(
+                        text = "待发送附件",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = attachment.displayName,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "${attachment.sizeLabel} · ${attachment.mimeType ?: "未知类型"}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
             TextButton(onClick = onRemove) {
                 Text("移除")
             }
-        }
-        attachment.textPreview?.takeIf { it.isNotBlank() }?.let {
-            Text(
-                text = it.take(180),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                maxLines = 4,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        attachment.extractionNote?.takeIf { it.isNotBlank() }?.let {
-            Text(
-                text = it,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis
-            )
         }
     }
 }
 
 @Composable
 private fun AttachmentCard(attachment: AttachmentPreview) {
+    val tint = attachmentTint(attachment.type)
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(
-                color = MaterialTheme.colorScheme.surfaceVariant,
+                color = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(8.dp)
+            )
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.32f),
                 shape = RoundedCornerShape(8.dp)
             )
             .padding(10.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text(
-            text = when (attachment.type) {
-                "image" -> "图片附件"
-                "audio" -> "录音附件"
-                else -> "文档附件"
-            },
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontWeight = FontWeight.SemiBold
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AttachmentTypeBadge(
+                text = attachmentShortLabel(attachment.type),
+                tint = tint
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = attachmentLabel(attachment.type),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = tint,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = attachment.displayName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "${FileUtils.formatSize(attachment.sizeBytes)} · ${attachment.mimeType ?: "未知类型"}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
         if (attachment.type == "image") {
             AsyncImage(
                 model = attachment.uri,
@@ -2111,26 +2179,57 @@ private fun AttachmentCard(attachment: AttachmentPreview) {
                 contentScale = ContentScale.Crop
             )
         }
-        Text(
-            text = attachment.displayName,
-            style = MaterialTheme.typography.bodyMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-        Text(
-            text = "${FileUtils.formatSize(attachment.sizeBytes)} · ${attachment.mimeType ?: "未知类型"}",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        attachment.textPreview?.takeIf { it.isNotBlank() }?.let {
-            Text(
-                text = it.take(160),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 4,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
+    }
+}
+
+@Composable
+private fun attachmentTint(type: String): Color {
+    return when (type) {
+        "image" -> MaterialTheme.colorScheme.primary
+        "audio" -> MaterialTheme.colorScheme.tertiary
+        else -> MaterialTheme.colorScheme.secondary
+    }
+}
+
+private fun attachmentLabel(type: String): String {
+    return when (type) {
+        "image" -> "图片附件"
+        "audio" -> "录音附件"
+        else -> "文档附件"
+    }
+}
+
+@Composable
+private fun AttachmentTypeBadge(
+    text: String,
+    tint: Color,
+    modifier: Modifier = Modifier
+) {
+    Text(
+        text = text,
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(tint.copy(alpha = 0.12f))
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        style = MaterialTheme.typography.labelMedium,
+        color = tint,
+        fontWeight = FontWeight.SemiBold
+    )
+}
+
+private fun pendingAttachmentLabel(type: String): String {
+    return when (type) {
+        "image" -> "图片"
+        "audio" -> "录音"
+        else -> "文档"
+    }
+}
+
+private fun attachmentShortLabel(type: String): String {
+    return when (type) {
+        "image" -> "IMG"
+        "audio" -> "AUD"
+        else -> "DOC"
     }
 }
 

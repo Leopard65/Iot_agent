@@ -18,6 +18,7 @@ fun parseClawCommand(text: String): ClawCommand {
     val phoneNumber = phoneNumberMatch
         ?.value
         ?.replace(Regex("""[\s-]"""), "")
+        ?.takeIf { it.length in 7..15 }
 
     return when {
         listOf("拍照", "相机", "camera").any { lower.contains(it) } -> ClawCommand.Camera
@@ -32,7 +33,7 @@ fun parseClawCommand(text: String): ClawCommand {
                 .replaceFirst("SMS", "", ignoreCase = true)
                 .replace(phoneNumberMatch?.value.orEmpty(), "")
                 .trim()
-                .ifBlank { "AIoT Assistant 短信演示" }
+                .ifBlank { "lot 短信确认" }
             ClawCommand.Sms(phoneNumber, content)
         }
         url != null -> ClawCommand.AppLeap(url)

@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.iotgpt.core.components.AppPage
@@ -61,30 +62,10 @@ fun StatsScreen(
             )
         }
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            MetricCard(
-                label = "会话数",
-                value = uiState.totalConversations.toString(),
-                modifier = Modifier.weight(1f)
-            )
-            MetricCard(
-                label = "消息数",
-                value = uiState.totalMessages.toString(),
-                modifier = Modifier.weight(1f)
-            )
-            MetricCard(
-                label = "今日消息",
-                value = uiState.todayMessages.toString(),
-                modifier = Modifier.weight(1f)
-            )
-            MetricCard(
-                label = "模型调用",
-                value = uiState.totalModelCalls.toString(),
-                modifier = Modifier.weight(1f)
-            )
+        MetricsGrid(uiState)
+
+        AppSectionCard(modifier = Modifier.fillMaxWidth()) {
+            ModelConfigSummary(uiState)
         }
 
         ModelAnalyticsPanel(
@@ -109,7 +90,9 @@ fun StatsScreen(
             }
             Text(
                 text = "最近请求：${formatTime(uiState.lastModelRequestAt)} · 当前模型：${uiState.activeModel}",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             uiState.lastApiError?.let { error ->
                 Text(
@@ -130,6 +113,32 @@ private enum class ModelChartMode(
     Trend("调用趋势", "模型调用趋势"),
     CountDistribution("次数分布", "模型调用次数占比"),
     Ranking("次数排行", "模型调用次数排行")
+}
+
+@Composable
+private fun MetricsGrid(uiState: StatsUiState) {
+    val metrics = listOf(
+        "会话数" to uiState.totalConversations.toString(),
+        "消息数" to uiState.totalMessages.toString(),
+        "今日消息" to uiState.todayMessages.toString(),
+        "模型调用" to uiState.totalModelCalls.toString()
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        metrics.chunked(2).forEach { rowItems ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                rowItems.forEach { (label, value) ->
+                    MetricCard(
+                        label = label,
+                        value = value,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -822,7 +831,9 @@ private fun ModelConfigSummary(uiState: StatsUiState) {
         )
         Text(
             text = "${uiState.activeProvider} · ${uiState.activeModel} · ${uiState.activeBaseUrlHost}",
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatusPill(
@@ -839,12 +850,17 @@ private fun ModelConfigSummary(uiState: StatsUiState) {
 
 @Composable
 private fun MetricCard(label: String, value: String, modifier: Modifier = Modifier) {
-    AppSectionCard(modifier = modifier) {
+    AppSectionCard(
+        modifier = modifier,
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp)
+    ) {
         Text(
             text = value,
-            style = MaterialTheme.typography.headlineMedium,
+            style = MaterialTheme.typography.headlineSmall,
             color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
         Text(
             text = label,

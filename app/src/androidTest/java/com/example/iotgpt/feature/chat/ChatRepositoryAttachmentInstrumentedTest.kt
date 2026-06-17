@@ -28,7 +28,7 @@ class ChatRepositoryAttachmentInstrumentedTest {
     fun documentAttachmentTextPreviewIsSentToLlmContext() = runBlocking {
         val harness = newHarness(supportsVision = false)
         try {
-            harness.repository.sendAttachmentMessage(
+            val conversationId = harness.repository.sendAttachmentMessage(
                 conversationId = null,
                 content = "用户上传文档：aiot_notes.txt，大小 1.0 KB，类型 text/plain。",
                 attachmentJson = attachmentJson(
@@ -43,6 +43,12 @@ class ChatRepositoryAttachmentInstrumentedTest {
             val userMessage = harness.fake.lastUserMessage()
             assertTrue(userMessage.content.contains("附件可解析正文"))
             assertTrue(userMessage.content.contains("MQTT QoS 1 表示至少送达一次。"))
+
+            val storedUserMessage = harness.database.messageDao()
+                .getMessages(conversationId)
+                .last { it.role == "user" }
+            assertTrue(!storedUserMessage.content.contains("附件可解析正文"))
+            assertTrue(!storedUserMessage.content.contains("MQTT QoS 1 表示至少送达一次。"))
         } finally {
             harness.close()
         }
@@ -65,7 +71,7 @@ class ChatRepositoryAttachmentInstrumentedTest {
 
             val userMessage = harness.fake.lastUserMessage()
             assertTrue(userMessage.content.contains("包含录音附件"))
-            assertTrue(userMessage.content.contains("不支持直接转写音频"))
+            assertTrue(userMessage.content.contains("未开启语音转写"))
         } finally {
             harness.close()
         }
@@ -81,7 +87,7 @@ class ChatRepositoryAttachmentInstrumentedTest {
             val audioUri = createTinyAudio(harness.context)
             harness.fake.transcriptionResult = "实验录音：温度传感器读数异常。"
 
-            harness.repository.sendAttachmentMessage(
+            val conversationId = harness.repository.sendAttachmentMessage(
                 conversationId = null,
                 content = "用户上传录音：recording.wav，大小 12.0 KB，类型 audio/wav。",
                 attachmentJson = attachmentJson(
@@ -96,6 +102,12 @@ class ChatRepositoryAttachmentInstrumentedTest {
             assertEquals(1, harness.fake.audioCalls.size)
             assertTrue(userMessage.content.contains("录音转写文本"))
             assertTrue(userMessage.content.contains("温度传感器读数异常"))
+
+            val storedUserMessage = harness.database.messageDao()
+                .getMessages(conversationId)
+                .last { it.role == "user" }
+            assertTrue(!storedUserMessage.content.contains("录音转写文本"))
+            assertTrue(!storedUserMessage.content.contains("温度传感器读数异常"))
         } finally {
             harness.close()
         }

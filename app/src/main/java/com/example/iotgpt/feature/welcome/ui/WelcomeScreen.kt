@@ -1,6 +1,8 @@
 package com.example.iotgpt.feature.welcome.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Button
@@ -16,6 +18,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import com.example.iotgpt.core.components.AppPage
 import com.example.iotgpt.core.components.AppSectionCard
 import com.example.iotgpt.core.components.StatusPill
@@ -23,7 +27,7 @@ import com.example.iotgpt.core.components.StatusTone
 import com.example.iotgpt.core.testing.AppTestTags
 
 /**
- * First-launch onboarding for the AIoT Assistant app.
+ * First-launch onboarding for the lot app.
  */
 @Composable
 fun WelcomeScreen(
@@ -35,8 +39,8 @@ fun WelcomeScreen(
     val isLastPage = pageIndex == onboardingPages.lastIndex
 
     AppPage(
-        title = "欢迎使用 AIoT Assistant",
-        subtitle = "面向物联网课程学习与工程演示",
+        title = "欢迎使用 lot",
+        subtitle = "面向物联网专业的 AI 助理",
         modifier = modifier,
         trailing = {
             StatusPill("${pageIndex + 1}/${onboardingPages.size}", tone = StatusTone.Primary)
@@ -47,21 +51,31 @@ fun WelcomeScreen(
             modifier = Modifier.fillMaxWidth()
         )
 
-        AppSectionCard(modifier = Modifier.fillMaxWidth()) {
+        AppSectionCard(
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(14.dp)
+        ) {
+            StatusPill(page.tag, tone = StatusTone.Success)
             Text(
                 text = page.title,
                 style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = page.description,
                 style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 4,
+                overflow = TextOverflow.Ellipsis
             )
-            StatusPill(page.tag, tone = StatusTone.Success)
         }
 
-        AppSectionCard(modifier = Modifier.fillMaxWidth()) {
+        AppSectionCard(
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(14.dp)
+        ) {
             Text(
                 text = "本页准备内容",
                 style = MaterialTheme.typography.titleMedium,
@@ -69,20 +83,12 @@ fun WelcomeScreen(
             )
             Text(
                 text = page.readyText,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis
             )
             page.readyItems.forEach { item ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = item,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    StatusPill("已就绪", tone = StatusTone.Success)
-                }
+                ReadyItemRow(item)
             }
         }
 
@@ -112,6 +118,25 @@ fun WelcomeScreen(
     }
 }
 
+@Composable
+private fun ReadyItemRow(item: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = item,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        StatusPill("就绪", tone = StatusTone.Success)
+    }
+}
+
 private data class OnboardingPage(
     val title: String,
     val description: String,
@@ -123,7 +148,7 @@ private data class OnboardingPage(
 private val onboardingPages = listOf(
     OnboardingPage(
         title = "AI 物联网问答",
-        description = "围绕传感器、嵌入式开发、MQTT、边缘计算和设备联网问题进行课程问答。",
+        description = "围绕传感器、嵌入式开发、MQTT、边缘计算和设备联网问题进行专业问答。",
         tag = "Chat Completions",
         readyText = "对话页已经准备好。真正联网回答需要先在设置页填写对应模型的 API Key。",
         readyItems = listOf(

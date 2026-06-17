@@ -13,6 +13,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
+import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
 import com.example.iotgpt.core.preferences.ModelProfile
 import com.example.iotgpt.core.preferences.SettingsStore
@@ -180,7 +181,7 @@ class ChatClawInstrumentedTest {
         composeRule.waitUntil(timeoutMillis = 5_000) {
             hasNodeWithTag(AppTestTags.CHAT_PENDING_ATTACHMENT) &&
                 composeRule.onAllNodesWithText(
-                    text = "待发送录音",
+                    text = "待发送附件",
                     useUnmergedTree = true
                 ).fetchSemanticsNodes().isNotEmpty()
         }
@@ -303,7 +304,7 @@ class ChatClawInstrumentedTest {
         composeRule.waitUntil(timeoutMillis = 8_000) {
             hasNodeWithTag(AppTestTags.CHAT_PENDING_ATTACHMENT) &&
                 composeRule.onAllNodesWithText(
-                    text = "待发送文档",
+                    text = "待发送附件",
                     useUnmergedTree = true
                 ).fetchSemanticsNodes().isNotEmpty() &&
                 composeRule.onAllNodesWithText(
@@ -400,14 +401,26 @@ class ChatClawInstrumentedTest {
 
         val directFile = device.wait(Until.findObject(By.text(fileName)), 3_000)
         if (directFile != null) {
-            directFile.click()
+            clickPickerItem(directFile)
             return
         }
 
         openDownloadsRootIfVisible(device)
         val downloadFile = device.wait(Until.findObject(By.text(fileName)), 5_000)
         checkNotNull(downloadFile) { "Document picker file not found: $fileName" }
-        downloadFile.click()
+        clickPickerItem(downloadFile)
+    }
+
+    private fun clickPickerItem(node: UiObject2) {
+        var target: UiObject2? = node
+        repeat(4) {
+            if (target?.isClickable == true) {
+                target?.click()
+                return
+            }
+            target = target?.parent
+        }
+        node.click()
     }
 
     private fun waitForDocumentsUi(device: UiDevice) {
@@ -453,9 +466,11 @@ class ChatClawInstrumentedTest {
     }
 
     private fun executeShellCommand(command: String) {
-        InstrumentationRegistry.getInstrumentation()
+        val descriptor = InstrumentationRegistry.getInstrumentation()
             .uiAutomation
             .executeShellCommand(command)
-            .close()
+        android.os.ParcelFileDescriptor.AutoCloseInputStream(descriptor).bufferedReader().use {
+            it.readText()
+        }
     }
 }

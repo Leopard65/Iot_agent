@@ -1,6 +1,8 @@
-# AIoT Assistant
+# lot
 
-AIoT Assistant 是一个面向物联网课程学习与课堂演示的 Android App。项目使用 Kotlin、Jetpack Compose、Room、DataStore、OkHttp 和 WorkManager 实现，支持 OpenAI 兼容大模型接口、本地会话保存、多模态附件、统计监测、通知和 Claw 本地智能体任务。
+lot 是一个面向物联网专业用户的 Android AI 助理。项目使用 Kotlin、Jetpack Compose、Room、DataStore、OkHttp 和 WorkManager 实现，支持 OpenAI 兼容大模型接口、本地会话保存、多模态附件、统计监测、通知和 Claw 本地智能体任务。
+
+项目对应的大作业题目为“AI物联网专业智能助手APP”。原始评分要求已整理在 `原始大作业要求.md`；`AIoT_App_完整版开发提示词.md` 是开发过程中由其他 AI 工具扩写出的参考提示，不作为原始需求来源。
 
 ## 功能概览
 
@@ -15,7 +17,7 @@ AIoT Assistant 是一个面向物联网课程学习与课堂演示的 Android Ap
 - 统计监测：展示会话数、消息数、当前模型配置、模型调用、Token/字符估算、最近 API 失败原因、网络/API 状态和 7 日趋势。
 - 通知：AI 回复完成、Claw 任务完成后触发系统通知，并提供 App 内状态提示。
 - 设置：保存 API 配置、切换主题、清空历史、导出调试信息。
-- Claw 模式：提供短信、拍照、下载服务三个本地智能体演示任务。
+- Claw 模式：提供短信、拍照、下载服务三个本地智能体任务。
 
 ## 技术栈
 
@@ -113,19 +115,19 @@ API Key 只通过 DataStore 保存在本机，没有写入源码。没有真实 
 
 ## 权限说明
 
-应用声明的权限用于课堂演示功能：
+应用声明的权限用于 AI 助理的联网、多模态采集和本地任务能力：
 
 - `INTERNET`：请求大模型 API 和下载文件。
 - `ACCESS_NETWORK_STATE`：统计页展示网络状态。
 - `CAMERA`：拍照附件和 Claw 拍照任务。
 - `RECORD_AUDIO`：录音附件。
 - `POST_NOTIFICATIONS`：AI 回复和任务完成通知。
-- `SEND_SMS`：Claw 短信演示，执行前需要运行时权限和二次确认。
+- `SEND_SMS`：Claw 短信任务，执行前需要运行时权限和二次确认。
 - `FOREGROUND_SERVICE`：为后续长期任务扩展预留。
 
 ## Claw 模式安全约束
 
-Claw 模式不是静默后台控制，而是课堂安全演示：
+Claw 模式不是静默后台控制，而是需要用户确认的本地能力：
 
 - 短信必须用户手动填写手机号和内容。
 - 短信发送前会请求 `SEND_SMS` 权限，并弹出确认对话框。

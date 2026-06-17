@@ -2,6 +2,7 @@ package com.example.iotgpt.feature.settings.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -68,7 +69,7 @@ fun SettingsScreen(
         AlertDialog(
             onDismissRequest = { showClearConfirm = false },
             title = { Text("清空历史会话") },
-            text = { Text("这会删除所有本地会话、消息和模型统计记录，操作不可撤销。") },
+            text = { Text("这会删除所有本地会话、消息、模型统计记录和 Claw 任务日志，操作不可撤销。") },
             confirmButton = {
                 Button(
                     enabled = !uiState.isClearing,
@@ -125,6 +126,11 @@ fun SettingsScreen(
         }
     ) {
         SettingsStatusBanner(message = uiState.statusMessage)
+
+        ActiveModelOverview(
+            activeProfile = uiState.activeProfile,
+            profileCount = uiState.profiles.size
+        )
 
         AppSectionCard(
             modifier = Modifier.fillMaxWidth(),
@@ -227,90 +233,78 @@ private fun SettingsStatusBanner(message: String?) {
 }
 
 @Composable
-private fun ActiveProfilePanel(
-    profile: ModelProfile?,
-    profileCount: Int,
-    onEdit: () -> Unit,
-    onTest: () -> Unit,
-    isTesting: Boolean
+private fun ActiveModelOverview(
+    activeProfile: ModelProfile?,
+    profileCount: Int
 ) {
     AppSectionCard(
         modifier = Modifier.fillMaxWidth(),
         contentPadding = PaddingValues(12.dp)
     ) {
-        SectionHeader(
-            title = "当前模型",
-            subtitle = "发送对话、摘要和图片理解时会使用这套配置。",
-            trailing = {
-                StatusPill(
-                    text = "$profileCount 套配置",
-                    tone = StatusTone.Neutral
-                )
-            }
-        )
-        if (profile == null) {
-            Text("还没有可用模型配置", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            return@AppSectionCard
-        }
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(8.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = profile.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = "${profile.provider} · ${profile.model}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                StatusPill(
-                    text = if (profile.apiKey.isBlank()) "Key 未配" else "Key 就绪",
-                    tone = if (profile.apiKey.isBlank()) StatusTone.Neutral else StatusTone.Success
+                Text(
+                    text = activeProfile?.name ?: "未选择模型",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = activeProfile?.model ?: "请新增或启用一个模型配置",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                StatusPill(
-                    text = if (profile.supportsVision) "图片输入已开" else "文本模式",
-                    tone = if (profile.supportsVision) StatusTone.Primary else StatusTone.Neutral
-                )
+            StatusPill(
+                text = "$profileCount 套配置",
+                tone = StatusTone.Neutral
+            )
+        }
+        ModelCapabilityPills(profile = activeProfile)
+        activeProfile?.baseUrl?.takeIf { it.isNotBlank() }?.let { baseUrl ->
+            Text(
+                text = baseUrl,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+private fun ModelCapabilityPills(profile: ModelProfile?) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            StatusPill(
+                text = profile?.provider?.ifBlank { "Custom" } ?: "未配置",
+                tone = StatusTone.Neutral
+            )
+        }
+        if (profile != null) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (profile.supportsVision) {
+                    StatusPill(text = "图片", tone = StatusTone.Primary)
+                }
                 if (profile.supportsReasoning) {
                     StatusPill(
-                        text = if (profile.reasoningEnabled) "思考已开" else "思考可用",
+                        text = if (profile.reasoningEnabled) "思考开" else "思考",
                         tone = if (profile.reasoningEnabled) StatusTone.Primary else StatusTone.Neutral
                     )
                 }
                 if (profile.supportsAudioTranscription) {
                     StatusPill(text = "转写", tone = StatusTone.Primary)
-                }
-                TextButton(onClick = onEdit) {
-                    Text("编辑")
-                }
-                TextButton(
-                    enabled = !isTesting,
-                    onClick = onTest
-                ) {
-                    Text(if (isTesting) "测试中" else "测试连接")
                 }
             }
         }
@@ -398,7 +392,7 @@ private fun MaintenancePanel(
             }
         }
         Text(
-            text = "IoTGPT 1.0 · AIoT Assistant",
+            text = "lot 1.0 · IoT AI Assistant",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -450,7 +444,7 @@ private fun ProfileEditorDialog(
                     singleLine = true,
                     textStyle = MaterialTheme.typography.bodySmall,
                     label = { Text("配置名称") },
-                    placeholder = { Text("例如 DeepSeek 课堂演示") }
+                    placeholder = { Text("例如 DeepSeek 日常助手") }
                 )
                 OutlinedTextField(
                     value = uiState.provider,
@@ -722,10 +716,16 @@ private fun ModelProfileRow(
     connectionResult: String?,
     onTest: () -> Unit
 ) {
+    val shape = RoundedCornerShape(8.dp)
+    val borderColor = if (selected) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.34f)
+    } else {
+        MaterialTheme.colorScheme.outline.copy(alpha = 0.28f)
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
+            .clip(shape)
             .background(
                 if (selected) {
                     MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
@@ -733,17 +733,19 @@ private fun ModelProfileRow(
                     MaterialTheme.colorScheme.surfaceContainerHigh
                 }
             )
+            .border(1.dp, borderColor, shape)
             .padding(10.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = profile.name,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -779,21 +781,14 @@ private fun ModelProfileRow(
                 }
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            StatusPill(text = profile.provider.ifBlank { "Custom" }, tone = StatusTone.Neutral)
-            if (profile.supportsVision) {
-                StatusPill(text = "图片", tone = StatusTone.Primary)
-            }
-            if (profile.supportsReasoning) {
-                StatusPill(
-                    text = if (profile.reasoningEnabled) "思考开" else "思考",
-                    tone = if (profile.reasoningEnabled) StatusTone.Primary else StatusTone.Neutral
-                )
-            }
-            if (profile.supportsAudioTranscription) {
-                StatusPill(text = "转写", tone = StatusTone.Primary)
-            }
-        }
+        Text(
+            text = profile.baseUrl.ifBlank { "Base URL 未配置" },
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        ModelCapabilityPills(profile = profile)
         Row(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically

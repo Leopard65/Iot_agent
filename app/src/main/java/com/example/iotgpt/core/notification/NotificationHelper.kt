@@ -28,7 +28,7 @@ class NotificationHelper(
             "AI 回复",
             NotificationManager.IMPORTANCE_DEFAULT
         ).apply {
-            description = "AI 回复完成、任务完成等课堂演示通知"
+            description = "AI 回复完成、任务完成等状态通知"
         }
 
         context.getSystemService(NotificationManager::class.java)
