@@ -46,7 +46,7 @@ private val LightColorScheme = lightColorScheme(
 )
 
 @Composable
-fun IoTGPTTheme(
+fun LotTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit

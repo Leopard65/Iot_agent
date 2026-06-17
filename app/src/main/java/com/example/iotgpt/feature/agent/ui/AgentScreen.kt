@@ -11,11 +11,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -56,9 +58,12 @@ import com.example.iotgpt.core.components.StatusTone
 import com.example.iotgpt.core.database.entity.AgentTaskEntity
 import com.example.iotgpt.core.util.CapturedFile
 import com.example.iotgpt.core.util.FileUtils
+import com.example.iotgpt.ui.theme.LotColors
+import com.example.iotgpt.ui.theme.LotRadius
+import com.example.iotgpt.ui.theme.LotSpacing
 
 /**
- * Local agent task screen for safe classroom demonstrations.
+ * Local agent task screen for controlled on-device assistant actions.
  */
 @Composable
 fun AgentScreen(
@@ -159,12 +164,17 @@ fun AgentScreen(
     }
 
     AppPage(
-        title = "Claw 智能体",
-        subtitle = "本地工具调度、系统 Intent 与硬件能力",
+        title = "Claw 本地智能体",
+        subtitle = "把明确指令转成本机服务调用",
         trailing = {
             StatusPill("${uiState.tasks.size} 条日志", tone = StatusTone.Success)
         }
     ) {
+        AgentCapabilityOverview(
+            latestTask = uiState.tasks.firstOrNull(),
+            totalCount = uiState.tasks.size
+        )
+
         AgentRouteRadarCard()
 
         LatestTaskLogCard(
@@ -224,6 +234,149 @@ fun AgentScreen(
     }
 }
 
+private data class AgentCapabilitySummary(
+    val title: String,
+    val status: String,
+    val detail: String,
+    val color: Color
+)
+
+@Composable
+private fun AgentCapabilityOverview(
+    latestTask: AgentTaskEntity?,
+    totalCount: Int
+) {
+    val capabilityItems = listOf(
+        AgentCapabilitySummary(
+            title = "短信",
+            status = "二次确认",
+            detail = "发送前保留手动安全确认",
+            color = LotColors.Warning
+        ),
+        AgentCapabilitySummary(
+            title = "拍照",
+            status = "权限触发",
+            detail = "调用系统相机并回写任务日志",
+            color = LotColors.Ai
+        ),
+        AgentCapabilitySummary(
+            title = "下载",
+            status = "后台执行",
+            detail = "WorkManager 下载完成后发通知",
+            color = LotColors.Iot
+        ),
+        AgentCapabilitySummary(
+            title = "App-Leap",
+            status = "Intent",
+            detail = "打开链接或交给系统搜索",
+            color = MaterialTheme.colorScheme.tertiary
+        )
+    )
+    val stateLabel = latestTask?.let { agentTaskStatusLabel(it.status) } ?: "待命"
+    val stateTone = latestTask?.let { agentTaskStatusTone(it.status) } ?: StatusTone.Primary
+
+    AppSectionCard(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = "本地能力面板",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = "Claw 只执行用户明确触发的系统能力，关键动作保留权限和确认步骤。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            StatusPill(stateLabel, tone = stateTone)
+        }
+
+        capabilityItems.chunked(2).forEach { rowItems ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(LotSpacing.sm)
+            ) {
+                rowItems.forEach { item ->
+                    AgentCapabilityTile(
+                        item = item,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+
+        Text(
+            text = "累计记录 $totalCount 次工具调用，可在历史中追踪本地智能体链路。",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun AgentCapabilityTile(
+    item: AgentCapabilitySummary,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .heightIn(min = 92.dp)
+            .clip(RoundedCornerShape(LotRadius.md))
+            .background(item.color.copy(alpha = 0.10f))
+            .border(
+                width = 1.dp,
+                color = item.color.copy(alpha = 0.28f),
+                shape = RoundedCornerShape(LotRadius.md)
+            )
+            .padding(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Canvas(modifier = Modifier.size(24.dp)) {
+            drawCircle(color = item.color.copy(alpha = 0.18f), radius = size.minDimension / 2f)
+            drawCircle(color = item.color, radius = size.minDimension * 0.22f)
+        }
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            Text(
+                text = item.title,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = item.status,
+                style = MaterialTheme.typography.labelMedium,
+                color = item.color,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = item.detail,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
 @Composable
 private fun LatestTaskLogCard(
     latestTask: AgentTaskEntity?,
@@ -258,6 +411,13 @@ private fun LatestTaskLogCard(
 
 @Composable
 private fun AgentRouteRadarCard() {
+    val routeColor = MaterialTheme.colorScheme.primary
+    val nodeColors = listOf(
+        LotColors.Claw,
+        MaterialTheme.colorScheme.tertiary,
+        LotColors.Warning,
+        MaterialTheme.colorScheme.secondary
+    )
     AppSectionCard(modifier = Modifier.fillMaxWidth()) {
         CardTitle("执行链路", "语义输入会被解析为受控工具调用")
         Canvas(
@@ -300,16 +460,11 @@ private fun AgentRouteRadarCard() {
             }
             drawPath(
                 path = path,
-                color = Color(0xFF4F46E5),
+                color = routeColor,
                 style = Stroke(width = 3.dp.toPx())
             )
             nodes.forEachIndexed { index, offset ->
-                val color = when (index) {
-                    0 -> Color(0xFF22C55E)
-                    1 -> Color(0xFF38BDF8)
-                    2 -> Color(0xFFF59E0B)
-                    else -> Color(0xFFEC4899)
-                }
+                val color = nodeColors[index % nodeColors.size]
                 drawCircle(color = color.copy(alpha = 0.18f), radius = 16.dp.toPx(), center = offset)
                 drawCircle(color = color, radius = 6.dp.toPx(), center = offset)
             }
@@ -343,7 +498,7 @@ private fun AppLeapAgentCard(
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
             label = { Text("链接或搜索词") },
-            placeholder = { Text("https://example.com 或 MQTT 调试") }
+            placeholder = { Text("https://example.com 或 今日天气") }
         )
         Button(onClick = onExecute) {
             Text("执行跃迁")

@@ -404,7 +404,7 @@ class ChatRepositoryImpl(
         val transcript = stableMessages
             .takeLast(MAX_SUMMARY_MESSAGES)
             .joinToString("\n") { "${it.role}: ${it.content}" }
-        val prompt = "请用不超过40个中文字符总结下面这段 AIoT 会话，直接输出摘要，不要解释：\n$transcript"
+        val prompt = "请用不超过40个中文字符总结下面这段 AI 助手会话，直接输出摘要，不要解释：\n$transcript"
 
         return runCatching {
             val result = llmApiService.createChatCompletion(

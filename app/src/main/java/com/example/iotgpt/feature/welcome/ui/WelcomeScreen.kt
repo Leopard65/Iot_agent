@@ -40,7 +40,7 @@ fun WelcomeScreen(
 
     AppPage(
         title = "欢迎使用 lot",
-        subtitle = "面向物联网专业的 AI 助理",
+        subtitle = "随时可用的 AI 智能助手",
         modifier = modifier,
         trailing = {
             StatusPill("${pageIndex + 1}/${onboardingPages.size}", tone = StatusTone.Primary)
@@ -147,8 +147,8 @@ private data class OnboardingPage(
 
 private val onboardingPages = listOf(
     OnboardingPage(
-        title = "AI 物联网问答",
-        description = "围绕传感器、嵌入式开发、MQTT、边缘计算和设备联网问题进行专业问答。",
+        title = "AI 对话助手",
+        description = "把问题、想法、资料或草稿交给 lot，它会帮你解释、整理、改写、规划和生成内容。",
         tag = "Chat Completions",
         readyText = "对话页已经准备好。真正联网回答需要先在设置页填写对应模型的 API Key。",
         readyItems = listOf(

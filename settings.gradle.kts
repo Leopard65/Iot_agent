@@ -19,6 +19,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "IoTGPT"
+rootProject.name = "lot"
 include(":app")
- 
+

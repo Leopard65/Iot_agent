@@ -34,6 +34,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.example.iotgpt.feature.agent.ui.AgentScreen
 import com.example.iotgpt.feature.chat.ui.ChatScreen
 import com.example.iotgpt.feature.settings.ui.SettingsScreen
 import com.example.iotgpt.feature.stats.ui.StatsScreen
@@ -121,6 +122,9 @@ fun AppNavigation() {
             composable(MainRoute.Chat.route) {
                 ChatScreen()
             }
+            composable(MainRoute.Agent.route) {
+                AgentScreen()
+            }
             composable(MainRoute.Stats.route) {
                 StatsScreen()
             }
@@ -149,6 +153,7 @@ private fun BusinessNavIcon(
             drawCircle(color = glow, radius = size.minDimension * 0.48f)
             when (route) {
                 MainRoute.Chat -> drawConsultingIcon(accent)
+                MainRoute.Agent -> drawAgentIcon(accent, selected)
                 MainRoute.Stats -> drawAnalyticsIcon(accent, selected)
                 MainRoute.Settings -> drawControlDialIcon(accent, selected)
             }
@@ -180,6 +185,56 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawConsultingIcon(
         size = Size(size.width * 0.25f, size.height * 0.17f),
         cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.dp.toPx(), 4.dp.toPx()),
         style = Stroke(width = 1.7.dp.toPx())
+    )
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawAgentIcon(
+    color: Color,
+    selected: Boolean
+) {
+    val stroke = Stroke(width = 1.6.dp.toPx(), cap = StrokeCap.Round)
+    drawRoundRect(
+        color = color.copy(alpha = 0.16f),
+        topLeft = Offset(size.width * 0.16f, size.height * 0.18f),
+        size = Size(size.width * 0.68f, size.height * 0.60f),
+        cornerRadius = androidx.compose.ui.geometry.CornerRadius(7.dp.toPx(), 7.dp.toPx())
+    )
+    drawRoundRect(
+        color = color,
+        topLeft = Offset(size.width * 0.16f, size.height * 0.18f),
+        size = Size(size.width * 0.68f, size.height * 0.60f),
+        cornerRadius = androidx.compose.ui.geometry.CornerRadius(7.dp.toPx(), 7.dp.toPx()),
+        style = stroke
+    )
+    drawLine(
+        color = color,
+        start = Offset(size.width * 0.50f, size.height * 0.18f),
+        end = Offset(size.width * 0.50f, size.height * 0.08f),
+        strokeWidth = stroke.width
+    )
+    drawCircle(
+        color = color,
+        radius = 2.2.dp.toPx(),
+        center = Offset(size.width * 0.50f, size.height * 0.07f)
+    )
+    listOf(0.36f, 0.64f).forEach { xRatio ->
+        drawCircle(
+            color = color,
+            radius = if (selected) 2.6.dp.toPx() else 2.2.dp.toPx(),
+            center = Offset(size.width * xRatio, size.height * 0.44f)
+        )
+    }
+    drawLine(
+        color = color,
+        start = Offset(size.width * 0.36f, size.height * 0.62f),
+        end = Offset(size.width * 0.64f, size.height * 0.62f),
+        strokeWidth = stroke.width
+    )
+    drawLine(
+        color = color.copy(alpha = 0.7f),
+        start = Offset(size.width * 0.22f, size.height * 0.82f),
+        end = Offset(size.width * 0.78f, size.height * 0.82f),
+        strokeWidth = 1.3.dp.toPx()
     )
 }
 

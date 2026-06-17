@@ -71,7 +71,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -101,7 +104,12 @@ import com.example.iotgpt.core.testing.AppTestTags
 import com.example.iotgpt.feature.chat.ClawCommand
 import com.example.iotgpt.feature.chat.parseClawCommand
 import com.example.iotgpt.feature.agent.ui.AgentViewModel
+import com.example.iotgpt.ui.theme.LotColors
+import com.example.iotgpt.ui.theme.LotMotion
+import com.example.iotgpt.ui.theme.LotRadius
+import com.example.iotgpt.ui.theme.LotSpacing
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.delay
@@ -650,7 +658,7 @@ fun ChatScreen(
                 )
                 viewModel.addClawExchange(
                     userContent = messageText,
-                    resultContent = "Claw 未识别到本地自动化指令。可试试：拍照、选择文档、录音、下载 https://...、短信 13800138000 内容、搜索 MQTT 调试、打开设置、打开 Wi-Fi、打开浏览器搜索 ESP32。"
+                    resultContent = "Claw 未识别到本地自动化指令。可试试：拍照、选择文档、录音、下载 https://...、短信 13800138000 内容、打开设置、打开 Wi-Fi、打开浏览器搜索天气。"
                 )
             }
         }
@@ -923,7 +931,7 @@ fun ChatScreen(
             }
 
             AppSectionCard(contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)) {
-                val clawAccent = Color(0xFF39FF88)
+                val clawAccent = LotColors.Claw
                 pendingAttachment?.let { attachment ->
                     PendingAttachmentCard(
                         attachment = attachment,
@@ -947,6 +955,12 @@ fun ChatScreen(
                         onCancel = { stopRecording(keep = false) }
                     )
                 }
+                ChatComposerCapabilityBar(
+                    isClawMode = uiState.isClawMode,
+                    isSaving = uiState.isSaving,
+                    modelLabel = uiState.activeModelProfile?.model ?: "未配置模型",
+                    reasoningEnabled = uiState.activeModelProfile?.reasoningEnabled == true
+                )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -957,8 +971,10 @@ fun ChatScreen(
                         onValueChange = { draft = it },
                         modifier = Modifier
                             .weight(1f)
+                            .heightIn(min = 48.dp, max = 132.dp)
                             .testTag(AppTestTags.CHAT_INPUT),
-                        singleLine = true,
+                        minLines = 1,
+                        maxLines = 4,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                         keyboardActions = KeyboardActions(
                             onSend = {
@@ -968,9 +984,9 @@ fun ChatScreen(
                             }
                         ),
                         placeholder = {
-                            Text(if (uiState.isClawMode) "Claw 指令" else "输入消息")
+                            Text(if (uiState.isClawMode) "输入 Claw 本地指令" else "向 lot 提问，或粘贴资料")
                         },
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(LotRadius.lg),
                         colors = if (uiState.isClawMode) {
                             OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = clawAccent,
@@ -985,18 +1001,15 @@ fun ChatScreen(
                     Box {
                         IconButton(
                             modifier = Modifier
-                                .size(44.dp)
+                                .size(48.dp)
                                 .testTag(AppTestTags.CHAT_ATTACH_MENU)
                                 .semantics { contentDescription = "添加附件" }
-                                .clip(RoundedCornerShape(8.dp))
+                                .clip(RoundedCornerShape(LotRadius.lg))
                                 .background(MaterialTheme.colorScheme.surfaceVariant),
                             onClick = { attachmentMenuExpanded = true }
                         ) {
-                            Text(
-                                text = "+",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontWeight = FontWeight.SemiBold
+                            ComposerAttachmentIcon(
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                         DropdownMenu(
@@ -1040,28 +1053,51 @@ fun ChatScreen(
                     if (uiState.isSaving && !uiState.isClawMode) {
                         Button(
                             onClick = viewModel::stopAssistantResponse,
-                            modifier = Modifier.height(44.dp),
+                            modifier = Modifier
+                                .size(48.dp)
+                                .semantics { contentDescription = "停止生成" },
+                            shape = RoundedCornerShape(LotRadius.lg),
+                            contentPadding = PaddingValues(0.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                         ) {
-                            Text("停止")
+                            ComposerActionIcon(
+                                action = ComposerAction.Stop,
+                                color = MaterialTheme.colorScheme.onError
+                            )
                         }
                     } else {
                         Button(
                             enabled = (draft.isNotBlank() || pendingAttachment != null),
                             onClick = ::submitMessage,
                             modifier = Modifier
-                                .height(44.dp)
-                                .testTag(AppTestTags.CHAT_SEND),
+                                .size(48.dp)
+                                .testTag(AppTestTags.CHAT_SEND)
+                                .semantics {
+                                    contentDescription = if (uiState.isClawMode) {
+                                        "执行 Claw 指令"
+                                    } else {
+                                        "发送消息"
+                                    }
+                                },
+                            shape = RoundedCornerShape(LotRadius.lg),
+                            contentPadding = PaddingValues(0.dp),
                             colors = if (uiState.isClawMode) {
                                 ButtonDefaults.buttonColors(
                                     containerColor = clawAccent,
-                                    contentColor = Color(0xFF06120B)
+                                    contentColor = LotColors.OnClaw
                                 )
                             } else {
                                 ButtonDefaults.buttonColors()
                             }
                         ) {
-                            Text(if (uiState.isClawMode) "执行" else "发送")
+                            ComposerActionIcon(
+                                action = if (uiState.isClawMode) ComposerAction.Execute else ComposerAction.Send,
+                                color = if (uiState.isClawMode) {
+                                    LotColors.OnClaw
+                                } else {
+                                    MaterialTheme.colorScheme.onPrimary
+                                }
+                            )
                         }
                     }
                 }
@@ -1084,6 +1120,127 @@ private data class ClawSmsCommand(
     val phoneNumber: String,
     val content: String
 )
+
+@Composable
+private fun ChatComposerCapabilityBar(
+    isClawMode: Boolean,
+    isSaving: Boolean,
+    modelLabel: String,
+    reasoningEnabled: Boolean
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(LotSpacing.sm),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        StatusPill(
+            text = if (isClawMode) "Claw 本地" else "AI 对话",
+            tone = if (isClawMode) StatusTone.Success else StatusTone.Primary
+        )
+        Text(
+            text = modelLabel,
+            modifier = Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(LotRadius.md))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        if (reasoningEnabled) {
+            StatusPill(text = "思考", tone = StatusTone.Neutral)
+        }
+        if (isSaving) {
+            StatusPill(text = "生成中", tone = StatusTone.Primary)
+        }
+    }
+}
+
+private enum class ComposerAction {
+    Send,
+    Execute,
+    Stop
+}
+
+@Composable
+private fun ComposerAttachmentIcon(
+    color: Color
+) {
+    Canvas(modifier = Modifier.size(22.dp)) {
+        val stroke = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
+        drawRoundRect(
+            color = color,
+            topLeft = Offset(size.width * 0.20f, size.height * 0.24f),
+            size = Size(size.width * 0.60f, size.height * 0.52f),
+            style = stroke
+        )
+        drawLine(
+            color = color,
+            start = Offset(size.width * 0.50f, size.height * 0.34f),
+            end = Offset(size.width * 0.50f, size.height * 0.66f),
+            strokeWidth = stroke.width,
+            cap = StrokeCap.Round
+        )
+        drawLine(
+            color = color,
+            start = Offset(size.width * 0.34f, size.height * 0.50f),
+            end = Offset(size.width * 0.66f, size.height * 0.50f),
+            strokeWidth = stroke.width,
+            cap = StrokeCap.Round
+        )
+    }
+}
+
+@Composable
+private fun ComposerActionIcon(
+    action: ComposerAction,
+    color: Color
+) {
+    Canvas(modifier = Modifier.size(22.dp)) {
+        val stroke = Stroke(width = 2.2.dp.toPx(), cap = StrokeCap.Round)
+        when (action) {
+            ComposerAction.Send -> {
+                drawLine(
+                    color = color,
+                    start = Offset(size.width * 0.22f, size.height * 0.50f),
+                    end = Offset(size.width * 0.78f, size.height * 0.50f),
+                    strokeWidth = stroke.width,
+                    cap = StrokeCap.Round
+                )
+                drawLine(
+                    color = color,
+                    start = Offset(size.width * 0.58f, size.height * 0.30f),
+                    end = Offset(size.width * 0.78f, size.height * 0.50f),
+                    strokeWidth = stroke.width,
+                    cap = StrokeCap.Round
+                )
+                drawLine(
+                    color = color,
+                    start = Offset(size.width * 0.58f, size.height * 0.70f),
+                    end = Offset(size.width * 0.78f, size.height * 0.50f),
+                    strokeWidth = stroke.width,
+                    cap = StrokeCap.Round
+                )
+            }
+            ComposerAction.Execute -> {
+                drawLine(color, Offset(size.width * 0.58f, size.height * 0.12f), Offset(size.width * 0.34f, size.height * 0.52f), stroke.width, cap = StrokeCap.Round)
+                drawLine(color, Offset(size.width * 0.34f, size.height * 0.52f), Offset(size.width * 0.52f, size.height * 0.52f), stroke.width, cap = StrokeCap.Round)
+                drawLine(color, Offset(size.width * 0.52f, size.height * 0.52f), Offset(size.width * 0.42f, size.height * 0.88f), stroke.width, cap = StrokeCap.Round)
+                drawLine(color, Offset(size.width * 0.42f, size.height * 0.88f), Offset(size.width * 0.72f, size.height * 0.42f), stroke.width, cap = StrokeCap.Round)
+            }
+            ComposerAction.Stop -> {
+                drawRoundRect(
+                    color = color,
+                    topLeft = Offset(size.width * 0.28f, size.height * 0.28f),
+                    size = Size(size.width * 0.44f, size.height * 0.44f),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx(), 3.dp.toPx())
+                )
+            }
+        }
+    }
+}
 
 private fun documentMimeTypes(): Array<String> {
     return arrayOf(
@@ -1251,23 +1408,50 @@ private fun ClawModeSwitch(
     compact: Boolean = false,
     onCheckedChange: (Boolean) -> Unit
 ) {
-    val clawAccent = Color(0xFF39FF88)
+    val clawAccent = LotColors.Claw
     Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .testTag(AppTestTags.CHAT_CLAW_SWITCH)
+            .clip(RoundedCornerShape(LotRadius.lg))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clickable { onCheckedChange(!enabled) }
+            .padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = if (compact) "Claw" else "Claw 本地模式",
-            style = MaterialTheme.typography.labelMedium,
-            color = if (enabled) clawAccent else MaterialTheme.colorScheme.onSurfaceVariant,
-            fontWeight = FontWeight.SemiBold
+        ModeSegment(
+            text = if (compact) "AI" else "AI 对话",
+            selected = !enabled,
+            selectedColor = MaterialTheme.colorScheme.primary
         )
-        Switch(
-            checked = enabled,
-            modifier = Modifier.testTag(AppTestTags.CHAT_CLAW_SWITCH),
-            onCheckedChange = onCheckedChange
+        ModeSegment(
+            text = if (compact) "Claw" else "Claw 本地",
+            selected = enabled,
+            selectedColor = clawAccent
         )
     }
+}
+
+@Composable
+private fun ModeSegment(
+    text: String,
+    selected: Boolean,
+    selectedColor: Color
+) {
+    Text(
+        text = text,
+        modifier = Modifier
+            .clip(RoundedCornerShape(LotRadius.md))
+            .background(
+                if (selected) selectedColor.copy(alpha = 0.16f) else Color.Transparent
+            )
+            .padding(horizontal = 10.dp, vertical = 7.dp),
+        style = MaterialTheme.typography.labelMedium,
+        color = if (selected) selectedColor else MaterialTheme.colorScheme.onSurfaceVariant,
+        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis
+    )
 }
 
 @Composable
@@ -1359,14 +1543,16 @@ private fun AutoDismissMessageCard(
         visible = true
         delay(1450)
         visible = false
-        delay(320)
+        delay(LotMotion.slow.toLong())
         onDismiss()
     }
 
     AnimatedVisibility(
         visible = visible,
-        enter = fadeIn(animationSpec = tween(120)) + expandVertically(animationSpec = tween(120)),
-        exit = fadeOut(animationSpec = tween(300)) + shrinkVertically(animationSpec = tween(300))
+        enter = fadeIn(animationSpec = tween(LotMotion.fast)) +
+            expandVertically(animationSpec = tween(LotMotion.fast)),
+        exit = fadeOut(animationSpec = tween(LotMotion.slow)) +
+            shrinkVertically(animationSpec = tween(LotMotion.slow))
     ) {
         AppSectionCard(
             modifier = Modifier.fillMaxWidth(),
@@ -1412,6 +1598,7 @@ private fun HistoryDrawer(
         target.contains(query, ignoreCase = true)
     }
     val visibleConversations = filteredConversations.take(visibleCount)
+    val visibleConversationGroups = groupConversationsForHistory(visibleConversations)
     val filteredClawTasks = clawTasks.filter { task ->
         val target = "${task.type} ${task.status} ${task.description}"
         target.contains(query, ignoreCase = true)
@@ -1520,20 +1707,28 @@ private fun HistoryDrawer(
                                 )
                             }
                         } else {
-                            items(
-                                items = visibleConversations,
-                                key = { it.id }
-                            ) { conversation ->
-                                ConversationHistoryItem(
-                                    conversation = conversation,
-                                    selected = conversation.id == currentConversationId,
-                                    onSelect = { onSelect(conversation.id) },
-                                    onRename = {
-                                        renameTargetId = conversation.id
-                                        renameDraft = conversation.title
-                                    },
-                                    onDelete = { onDelete(conversation.id) }
-                                )
+                            visibleConversationGroups.forEach { group ->
+                                item(key = "history-group-${group.label}") {
+                                    HistoryGroupHeader(
+                                        label = group.label,
+                                        count = group.conversations.size
+                                    )
+                                }
+                                items(
+                                    items = group.conversations,
+                                    key = { it.id }
+                                ) { conversation ->
+                                    ConversationHistoryItem(
+                                        conversation = conversation,
+                                        selected = conversation.id == currentConversationId,
+                                        onSelect = { onSelect(conversation.id) },
+                                        onRename = {
+                                            renameTargetId = conversation.id
+                                            renameDraft = conversation.title
+                                        },
+                                        onDelete = { onDelete(conversation.id) }
+                                    )
+                                }
                             }
                             if (visibleConversations.size < filteredConversations.size) {
                                 item(key = "load-more-history") {
@@ -1587,6 +1782,71 @@ private fun HistoryDrawer(
 private enum class HistoryDrawerTab {
     Conversations,
     ClawLog
+}
+
+private data class HistoryConversationGroup(
+    val label: String,
+    val conversations: List<ConversationEntity>
+)
+
+private fun groupConversationsForHistory(
+    conversations: List<ConversationEntity>
+): List<HistoryConversationGroup> {
+    val grouped = conversations.groupBy { historyDateGroupLabel(it.updatedAt) }
+    val order = listOf("今天", "昨天", "近 7 天", "更早")
+    return order.mapNotNull { label ->
+        grouped[label]?.takeIf { it.isNotEmpty() }?.let { items ->
+            HistoryConversationGroup(label, items)
+        }
+    }
+}
+
+private fun historyDateGroupLabel(timestamp: Long): String {
+    val target = Calendar.getInstance().apply { timeInMillis = timestamp }
+    val todayStart = Calendar.getInstance().apply {
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
+    val yesterdayStart = (todayStart.clone() as Calendar).apply {
+        add(Calendar.DAY_OF_YEAR, -1)
+    }
+    val sevenDaysStart = (todayStart.clone() as Calendar).apply {
+        add(Calendar.DAY_OF_YEAR, -6)
+    }
+    return when {
+        target.timeInMillis >= todayStart.timeInMillis -> "今天"
+        target.timeInMillis >= yesterdayStart.timeInMillis -> "昨天"
+        target.timeInMillis >= sevenDaysStart.timeInMillis -> "近 7 天"
+        else -> "更早"
+    }
+}
+
+@Composable
+private fun HistoryGroupHeader(
+    label: String,
+    count: Int
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp, bottom = 2.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.SemiBold
+        )
+        Text(
+            text = "$count",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f)
+        )
+    }
 }
 
 @Composable
@@ -1712,76 +1972,91 @@ private fun ConversationHistoryItem(
     onRename: () -> Unit,
     onDelete: () -> Unit
 ) {
+    var menuExpanded by rememberSaveable { mutableStateOf(false) }
     val background = if (selected) {
-        MaterialTheme.colorScheme.primaryContainer
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
     } else {
         MaterialTheme.colorScheme.surface
     }
+    val shape = RoundedCornerShape(LotRadius.md)
 
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(background, RoundedCornerShape(8.dp))
+            .background(background, shape)
             .clickable(onClick = onSelect)
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top
+        Box(
+            modifier = Modifier
+                .height(52.dp)
+                .size(width = 3.dp, height = 52.dp)
+                .background(
+                    if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                    RoundedCornerShape(topEnd = 3.dp, bottomEnd = 3.dp)
+                )
+        )
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 10.dp, end = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = conversation.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = conversation.summary ?: "本地会话",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                HistoryActionIconButton(
-                    action = HistoryAction.Rename,
-                    onClick = onRename
-                )
-                HistoryActionIconButton(
-                    action = HistoryAction.Delete,
-                    onClick = onDelete
-                )
-            }
+            Text(
+                text = conversation.title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = conversation.summary?.takeIf { it.isNotBlank() } ?: "本地会话",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = "${conversation.messageCount} 条消息 · ${formatTime(conversation.updatedAt)}",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = "${conversation.messageCount} 条消息",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+        Box {
+            HistoryActionIconButton(
+                action = HistoryAction.More,
+                onClick = { menuExpanded = true }
             )
-            Text(
-                text = formatTime(conversation.updatedAt),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            DropdownMenu(
+                expanded = menuExpanded,
+                onDismissRequest = { menuExpanded = false }
+            ) {
+                DropdownMenuItem(
+                    text = { Text("重命名") },
+                    onClick = {
+                        menuExpanded = false
+                        onRename()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("删除") },
+                    onClick = {
+                        menuExpanded = false
+                        onDelete()
+                    }
+                )
+            }
         }
     }
 }
 
 private enum class HistoryAction {
     Rename,
-    Delete
+    Delete,
+    More
 }
 
 @Composable
@@ -1791,7 +2066,7 @@ private fun HistoryActionIconButton(
 ) {
     IconButton(
         onClick = onClick,
-        modifier = Modifier.size(32.dp)
+        modifier = Modifier.size(48.dp)
     ) {
         val color = MaterialTheme.colorScheme.onSurfaceVariant
         Canvas(modifier = Modifier.size(17.dp)) {
@@ -1855,6 +2130,15 @@ private fun HistoryActionIconButton(
                         strokeWidth = stroke.width
                     )
                 }
+                HistoryAction.More -> {
+                    listOf(0.32f, 0.50f, 0.68f).forEach { x ->
+                        drawCircle(
+                            color = color,
+                            radius = 1.8.dp.toPx(),
+                            center = androidx.compose.ui.geometry.Offset(size.width * x, size.height * 0.5f)
+                        )
+                    }
+                }
             }
         }
     }
@@ -1865,29 +2149,108 @@ private fun EmptyChatCard(
     onExampleSelected: (String) -> Unit
 ) {
     val examples = listOf(
-        "MQTT QoS 区别",
-        "ESP32 上传失败排查",
-        "Modbus 网关选型"
+        PromptExample("写作", "帮我润色一段自我介绍", "让表达更自然、清晰、有重点"),
+        PromptExample("学习", "把这段知识点讲明白", "用例子解释概念并整理重点"),
+        PromptExample("规划", "制定一周复习计划", "按时间、任务和优先级拆分"),
+        PromptExample("总结", "把这段资料整理成摘要", "提炼要点、结论和待办事项"),
+        PromptExample("生成", "写一封礼貌的邮件", "包含主题、正文和结束语"),
+        PromptExample("分析", "帮我比较两个方案", "列出优缺点、风险和建议")
     )
     AppSectionCard(
         modifier = Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(10.dp)
+        contentPadding = PaddingValues(12.dp)
     ) {
-        Text(
-            text = "开始提问",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            examples.forEach { example ->
-                TextButton(onClick = { onExampleSelected(example) }) {
-                    Text(
-                        text = example,
-                        style = MaterialTheme.typography.labelMedium
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                text = "Prompt Deck",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = "选择一个常用场景，lot 会把它放进输入框继续完善。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        examples.chunked(2).forEach { rowExamples ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                rowExamples.forEach { example ->
+                    PromptDeckItem(
+                        example = example,
+                        modifier = Modifier.weight(1f),
+                        onClick = { onExampleSelected(example.title) }
                     )
+                }
+                if (rowExamples.size == 1) {
+                    Box(modifier = Modifier.weight(1f))
                 }
             }
         }
+    }
+}
+
+private data class PromptExample(
+    val category: String,
+    val title: String,
+    val description: String
+)
+
+@Composable
+private fun PromptDeckItem(
+    example: PromptExample,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val tint = when (example.category) {
+        "调试" -> MaterialTheme.colorScheme.secondary
+        "生成" -> MaterialTheme.colorScheme.tertiary
+        "分析" -> LotColors.Warning
+        else -> MaterialTheme.colorScheme.primary
+    }
+    Column(
+        modifier = modifier
+            .heightIn(min = 92.dp)
+            .clip(RoundedCornerShape(LotRadius.md))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .border(
+                width = 1.dp,
+                color = tint.copy(alpha = 0.28f),
+                shape = RoundedCornerShape(LotRadius.md)
+            )
+            .clickable(onClick = onClick)
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text(
+            text = example.category,
+            modifier = Modifier
+                .clip(RoundedCornerShape(LotRadius.sm))
+                .background(tint.copy(alpha = 0.12f))
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = tint,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            text = example.title,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            text = example.description,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 

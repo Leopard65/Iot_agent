@@ -73,7 +73,7 @@
         android:restoreAnyVersion="true"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.IoTGPT"
+        android:theme="@style/Theme.Lot"
         android:usesCleartextTraffic="true">
         <provider
             android:name="androidx.core.content.FileProvider"
@@ -89,7 +89,7 @@
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
-            android:theme="@style/Theme.IoTGPT">
+            android:theme="@style/Theme.Lot">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 

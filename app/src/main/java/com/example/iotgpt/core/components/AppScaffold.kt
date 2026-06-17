@@ -25,6 +25,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.iotgpt.ui.theme.LotRadius
+import com.example.iotgpt.ui.theme.LotSpacing
 
 /**
  * Shared screen shell for top-level feature pages.
@@ -43,7 +45,7 @@ fun AppPage(
         .fillMaxSize()
         .background(MaterialTheme.colorScheme.background)
         .statusBarsPadding()
-        .padding(horizontal = 14.dp, vertical = 4.dp)
+        .padding(horizontal = 14.dp, vertical = LotSpacing.xs)
 
     Column(
         modifier = if (scrollable) {
@@ -51,7 +53,7 @@ fun AppPage(
         } else {
             pageModifier
         },
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(LotSpacing.md)
     ) {
         if (showHeader) {
             Row(
@@ -96,7 +98,7 @@ fun AppSectionCard(
 ) {
     Card(
         modifier = modifier,
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(LotRadius.md),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),
@@ -104,7 +106,7 @@ fun AppSectionCard(
     ) {
         Column(
             modifier = Modifier.padding(contentPadding),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(LotSpacing.md),
             content = content
         )
     }
@@ -130,7 +132,7 @@ fun StatusPill(
     Text(
         text = text,
         modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(LotRadius.md))
             .background(container)
             .padding(horizontal = 10.dp, vertical = 6.dp),
         color = content,

@@ -12,7 +12,7 @@ import com.example.iotgpt.core.notification.NotificationHelper
 import com.example.iotgpt.core.preferences.SettingsStore
 import com.example.iotgpt.core.preferences.ThemeMode
 import com.example.iotgpt.navigation.AppNavigation
-import com.example.iotgpt.ui.theme.IoTGPTTheme
+import com.example.iotgpt.ui.theme.LotTheme
 
 /**
  * App host Activity. It owns the Compose entry point and delegates app screens
@@ -33,7 +33,7 @@ class MainActivity : ComponentActivity() {
                 ThemeMode.Dark -> true
             }
 
-            IoTGPTTheme(darkTheme = darkTheme, dynamicColor = false) {
+            LotTheme(darkTheme = darkTheme, dynamicColor = false) {
                 AppNavigation()
             }
         }

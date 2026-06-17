@@ -106,7 +106,7 @@ fun LaunchWelcomeScreen(
                     textAlign = TextAlign.Center
                 )
                 Text(
-                    text = "连接多维视界，赋能专业决策",
+                    text = "清晰思考，随时协助",
                     style = MaterialTheme.typography.bodyMedium,
                     color = onSurfaceVariant,
                     textAlign = TextAlign.Center
@@ -162,7 +162,7 @@ private fun LogoMark(
             )
         }
         Text(
-            text = "AI",
+            text = "lot",
             style = MaterialTheme.typography.headlineLarge,
             color = MaterialTheme.colorScheme.onSurface,
             fontWeight = FontWeight.Bold

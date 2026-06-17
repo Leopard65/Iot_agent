@@ -127,6 +127,23 @@ fun SettingsScreen(
     ) {
         SettingsStatusBanner(message = uiState.statusMessage)
 
+        ModelSetupGuide(
+            uiState = uiState,
+            onNewProfile = {
+                viewModel.startNewProfile()
+                showEditorDialog = true
+            },
+            onEditActive = {
+                val activeId = uiState.activeProfileId
+                if (activeId == null) {
+                    viewModel.startNewProfile()
+                } else {
+                    viewModel.editProfile(activeId)
+                }
+                showEditorDialog = true
+            }
+        )
+
         ActiveModelOverview(
             activeProfile = uiState.activeProfile,
             profileCount = uiState.profiles.size
@@ -211,6 +228,139 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun ModelSetupGuide(
+    uiState: SettingsUiState,
+    onNewProfile: () -> Unit,
+    onEditActive: () -> Unit
+) {
+    val activeProfile = uiState.activeProfile
+    val connectionResult = activeProfile?.let { uiState.connectionResults[it.id] }
+    val hasProfile = activeProfile != null
+    val hasApiKey = activeProfile?.apiKey?.isNotBlank() == true
+    val connectionOk = connectionResult?.contains("成功") == true
+    val statusText = when {
+        connectionOk -> "可对话"
+        hasApiKey -> "待测试"
+        hasProfile -> "待填 Key"
+        else -> "待新增"
+    }
+    AppSectionCard(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = "配置向导",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = "先选服务商，再填 API Key，最后测试连接；Key 只保存在本机 DataStore。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            StatusPill(
+                text = statusText,
+                tone = if (connectionOk) StatusTone.Success else StatusTone.Primary
+            )
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SetupStepRow(
+                index = 1,
+                title = "选择服务商",
+                detail = activeProfile?.provider?.ifBlank { "自定义服务" } ?: "DeepSeek / 通义 / MiMo / OpenAI",
+                completed = hasProfile
+            )
+            SetupStepRow(
+                index = 2,
+                title = "填写 API Key",
+                detail = if (hasApiKey) "已保存到本机" else "不会写入源码或调试导出",
+                completed = hasApiKey
+            )
+            SetupStepRow(
+                index = 3,
+                title = "测试连接",
+                detail = connectionResult ?: "确认 Base URL、模型名和网络状态",
+                completed = connectionOk
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = onNewProfile) {
+                Text("新增配置")
+            }
+            TextButton(onClick = onEditActive) {
+                Text(if (hasProfile) "编辑当前" else "使用预设")
+            }
+        }
+    }
+}
+
+@Composable
+private fun SetupStepRow(
+    index: Int,
+    title: String,
+    detail: String,
+    completed: Boolean
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = if (completed) "✓" else index.toString(),
+            modifier = Modifier
+                .size(28.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(
+                    if (completed) {
+                        MaterialTheme.colorScheme.secondaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.surfaceVariant
+                    }
+                )
+                .padding(vertical = 5.dp),
+            style = MaterialTheme.typography.labelMedium,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            color = if (completed) {
+                MaterialTheme.colorScheme.onSecondaryContainer
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            fontWeight = FontWeight.SemiBold
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = detail,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
@@ -392,7 +542,7 @@ private fun MaintenancePanel(
             }
         }
         Text(
-            text = "lot 1.0 · IoT AI Assistant",
+            text = "lot 1.0 · AI Assistant",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -845,7 +995,7 @@ private fun ProfileActionIconButton(
         enabled = enabled,
         onClick = onClick,
         modifier = Modifier
-            .size(36.dp)
+            .size(48.dp)
             .semantics { contentDescription = action.contentDescription }
     ) {
         ProfileActionIcon(
