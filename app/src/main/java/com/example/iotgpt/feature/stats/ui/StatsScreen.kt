@@ -39,6 +39,23 @@ import com.example.iotgpt.core.components.StatusPill
 import com.example.iotgpt.core.components.StatusTone
 import com.example.iotgpt.core.database.dao.ModelUsageSummary
 import com.example.iotgpt.ui.theme.LotColors
+import com.example.iotgpt.ui.theme.LotMotion
+import com.example.iotgpt.ui.theme.LotRadius
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.IconButton
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -225,13 +242,147 @@ private fun MetricsGrid(uiState: StatsUiState) {
     }
 }
 
+private const val CHART_MAX_MODELS = 5
+private const val OTHER_MODEL_LABEL = "其他" // mirrors StatsViewModel.buildModelBuckets
+
+private data class ChartInsightRow(
+    val tag: String,
+    val color: Color,
+    val label: String,
+    val value: String
+)
+
+private data class ChartInsight(
+    val title: String,
+    val total: String,
+    val rows: List<ChartInsightRow>
+)
+
+private fun modelTag(index: Int): String = "M${index + 1}"
+
+/** Pure: which density hint (if any) to show under a chart. */
+internal fun chartDensityNote(
+    seriesCount: Int,
+    pointCount: Int,
+    aggregated: Boolean,
+    maxModels: Int
+): String? = when {
+    aggregated -> "仅显示调用最多的 $maxModels 个模型，其余归入“其他”"
+    pointCount <= 2 || seriesCount <= 1 -> "数据较少，继续使用后趋势更清晰"
+    else -> null
+}
+
+private fun densityNoteFor(uiState: StatsUiState, mode: ModelChartMode): String? {
+    return when (mode) {
+        ModelChartMode.Consumption -> {
+            val buckets = uiState.modelUsageDistribution
+            val ids = buckets.flatMap { it.segments.map { s -> s.modelId } }.distinct()
+            chartDensityNote(ids.size, buckets.size, ids.contains(OTHER_MODEL_LABEL), CHART_MAX_MODELS)
+        }
+        ModelChartMode.Trend -> {
+            val buckets = uiState.modelCallTrend
+            val ids = buckets.flatMap { it.segments.map { s -> s.modelId } }.distinct()
+            chartDensityNote(ids.size, buckets.size, ids.contains(OTHER_MODEL_LABEL), CHART_MAX_MODELS)
+        }
+        ModelChartMode.CountDistribution -> {
+            val n = uiState.modelUsage.count { it.callCount > 0 }
+            chartDensityNote(n, n, false, CHART_MAX_MODELS)
+        }
+        ModelChartMode.Ranking -> {
+            val n = uiState.modelUsage.size
+            chartDensityNote(n.coerceAtMost(8), n, n > 8, CHART_MAX_MODELS)
+        }
+    }
+}
+
+@Composable
+private fun ChartInsightCard(insight: ChartInsight, onDismiss: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(LotRadius.md))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = insight.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = insight.total,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier.semantics { contentDescription = "关闭选中详情" }
+            ) {
+                Text(
+                    text = "✕",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        if (insight.rows.isEmpty()) {
+            Text(
+                text = "无调用",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            insight.rows.forEach { row ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = row.tag,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.width(22.dp)
+                    )
+                    Canvas(modifier = Modifier.size(10.dp)) {
+                        drawCircle(color = row.color)
+                    }
+                    Text(
+                        text = row.label,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = row.value,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun ModelAnalyticsPanel(
     uiState: StatsUiState,
     selectedMode: ModelChartMode,
     onModeSelected: (ModelChartMode) -> Unit
 ) {
-    var selectedInsight by rememberSaveable(selectedMode) { mutableStateOf<String?>(null) }
+    var selectedInsight by remember(selectedMode) { mutableStateOf<ChartInsight?>(null) }
 
     AppSectionCard(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -287,12 +438,21 @@ private fun ModelAnalyticsPanel(
                     onInsight = { selectedInsight = it }
                 )
             }
-            selectedInsight?.let {
+            densityNoteFor(uiState, selectedMode)?.let { note ->
                 Text(
-                    text = "选中：$it",
+                    text = note,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+            var lastInsight by remember { mutableStateOf<ChartInsight?>(null) }
+            LaunchedEffect(selectedInsight) { selectedInsight?.let { lastInsight = it } }
+            AnimatedVisibility(
+                visible = selectedInsight != null,
+                enter = fadeIn(tween(LotMotion.normal)) + expandVertically(tween(LotMotion.normal)),
+                exit = fadeOut(tween(LotMotion.fast)) + shrinkVertically(tween(LotMotion.fast))
+            ) {
+                lastInsight?.let { insight -> ChartInsightCard(insight) { selectedInsight = null } }
             }
         }
     }
@@ -431,9 +591,10 @@ private fun UsageBarChart(
 @Composable
 private fun ModelUsageDistributionChart(
     buckets: List<StackedUsageBucket>,
-    onInsight: (String) -> Unit
+    onInsight: (ChartInsight) -> Unit
 ) {
     val palette = chartPalette()
+    val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
     val data = buckets.ifEmpty {
         listOf(StackedUsageBucket("暂无", emptyList()))
     }
@@ -468,11 +629,24 @@ private fun ModelUsageDistributionChart(
                             .toInt()
                             .coerceIn(0, data.lastIndex)
                         val bucket = data[index]
-                        val detail = bucket.segments
+                        val rows = bucket.segments
                             .sortedByDescending { it.amount }
-                            .joinToString("，") { "${it.modelId} ${formatAmount(it.amount)}" }
-                            .ifBlank { "无调用" }
-                        onInsight("${bucket.label} · 总计 ${formatAmount(bucket.total)} · $detail")
+                            .map { segment ->
+                                val ci = modelIds.indexOf(segment.modelId).coerceAtLeast(0)
+                                ChartInsightRow(
+                                    tag = modelTag(ci),
+                                    color = palette[ci % palette.size],
+                                    label = segment.modelId,
+                                    value = formatAmount(segment.amount)
+                                )
+                            }
+                        onInsight(
+                            ChartInsight(
+                                title = bucket.label,
+                                total = "总计 ${formatAmount(bucket.total)}",
+                                rows = rows
+                            )
+                        )
                     }
                 }
         ) {
@@ -482,7 +656,6 @@ private fun ModelUsageDistributionChart(
             val plotBottom = size.height - 16f
             val plotHeight = plotBottom - plotTop
             val plotWidth = plotRight - plotLeft
-            val gridColor = Color(0xFFE7EAF0)
 
             repeat(5) { index ->
                 val y = plotTop + plotHeight * index / 4f
@@ -532,7 +705,8 @@ private fun ModelUsageDistributionChart(
                         rowModels.forEach { modelId ->
                             LegendItem(
                                 color = palette[modelIds.indexOf(modelId) % palette.size],
-                                label = modelId
+                                label = modelId,
+                                code = modelTag(modelIds.indexOf(modelId))
                             )
                         }
                     }
@@ -545,9 +719,10 @@ private fun ModelUsageDistributionChart(
 @Composable
 private fun ModelCallTrendChart(
     buckets: List<StackedUsageBucket>,
-    onInsight: (String) -> Unit
+    onInsight: (ChartInsight) -> Unit
 ) {
     val palette = chartPalette()
+    val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
     val data = buckets.ifEmpty { listOf(StackedUsageBucket("暂无", emptyList())) }
     val modelIds = data
         .flatMap { it.segments.map { segment -> segment.modelId } }
@@ -588,11 +763,24 @@ private fun ModelCallTrendChart(
                                 .coerceIn(0, data.lastIndex)
                         }
                         val bucket = data[index]
-                        val detail = bucket.segments
+                        val rows = bucket.segments
                             .sortedByDescending { it.amount }
-                            .joinToString("，") { "${it.modelId} ${it.amount} 次" }
-                            .ifBlank { "无调用" }
-                        onInsight("${bucket.label} · 总计 ${bucket.total} 次 · $detail")
+                            .map { segment ->
+                                val ci = modelIds.indexOf(segment.modelId).coerceAtLeast(0)
+                                ChartInsightRow(
+                                    tag = modelTag(ci),
+                                    color = palette[ci % palette.size],
+                                    label = segment.modelId,
+                                    value = "${segment.amount} 次"
+                                )
+                            }
+                        onInsight(
+                            ChartInsight(
+                                title = bucket.label,
+                                total = "总计 ${bucket.total} 次",
+                                rows = rows
+                            )
+                        )
                     }
                 }
         ) {
@@ -602,7 +790,6 @@ private fun ModelCallTrendChart(
             val plotBottom = size.height - 18f
             val plotHeight = plotBottom - plotTop
             val plotWidth = plotRight - plotLeft
-            val gridColor = Color(0xFFE7EAF0)
 
             repeat(5) { index ->
                 val y = plotTop + plotHeight * index / 4f
@@ -646,9 +833,10 @@ private fun ModelCallTrendChart(
 @Composable
 private fun ModelCallCountDonutChart(
     segments: List<UsageSegment>,
-    onInsight: (String) -> Unit
+    onInsight: (ChartInsight) -> Unit
 ) {
     val palette = chartPalette()
+    val trackColor = MaterialTheme.colorScheme.surfaceVariant
     val data = segments.filter { it.amount > 0L }
     val total = data.sumOf { it.amount }
 
@@ -681,7 +869,20 @@ private fun ModelCallCountDonutChart(
                                 val sweep = item.amount.toFloat() / total.toFloat() * 360f
                                 if (sweepPosition >= consumed && sweepPosition <= consumed + sweep) {
                                     val percent = item.amount * 100 / total
-                                    onInsight("${item.modelId} · ${item.amount} 次 · $percent%")
+                                    onInsight(
+                                        ChartInsight(
+                                            title = item.modelId,
+                                            total = "${item.amount} 次 · $percent%",
+                                            rows = listOf(
+                                                ChartInsightRow(
+                                                    tag = modelTag(index),
+                                                    color = palette[index % palette.size],
+                                                    label = item.modelId,
+                                                    value = "${item.amount} 次 · $percent%"
+                                                )
+                                            )
+                                        )
+                                    )
                                     return@detectTapGestures
                                 }
                                 consumed += sweep
@@ -692,7 +893,7 @@ private fun ModelCallCountDonutChart(
                 val strokeWidth = 24.dp.toPx()
                 if (total <= 0L) {
                     drawCircle(
-                        color = Color(0xFFE7EAF0),
+                        color = trackColor,
                         radius = size.minDimension / 2f - strokeWidth,
                         style = Stroke(width = strokeWidth)
                     )
@@ -733,7 +934,8 @@ private fun ModelCallCountDonutChart(
                 LegendValueRow(
                     color = palette[index % palette.size],
                     label = item.modelId,
-                    value = "${item.amount} 次 · $percent%"
+                    value = "${item.amount} 次 · $percent%",
+                    code = modelTag(index)
                 )
             }
         }
@@ -743,9 +945,10 @@ private fun ModelCallCountDonutChart(
 @Composable
 private fun ModelCallRankingChart(
     usage: List<ModelUsageSummary>,
-    onInsight: (String) -> Unit
+    onInsight: (ChartInsight) -> Unit
 ) {
     val palette = chartPalette()
+    val trackColor = MaterialTheme.colorScheme.surfaceVariant
     val data = usage.sortedByDescending { it.callCount }.take(8)
     val max = data.maxOfOrNull { it.callCount }?.coerceAtLeast(1) ?: 1
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -757,7 +960,7 @@ private fun ModelCallRankingChart(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = item.modelId,
+                        text = "${modelTag(index)} · ${item.modelId}",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1
@@ -775,13 +978,24 @@ private fun ModelCallRankingChart(
                         .pointerInput(item) {
                             detectTapGestures {
                                 onInsight(
-                                    "${item.modelId} · ${item.callCount} 次 · 总计 ${formatAmount(item.totalTokens)}"
+                                    ChartInsight(
+                                        title = item.modelId,
+                                        total = "${item.callCount} 次",
+                                        rows = listOf(
+                                            ChartInsightRow(
+                                                tag = modelTag(index),
+                                                color = palette[index % palette.size],
+                                                label = "累计 token/字符",
+                                                value = formatAmount(item.totalTokens)
+                                            )
+                                        )
+                                    )
                                 )
                             }
                         }
                 ) {
                     drawRoundRect(
-                        color = Color(0xFFE7EAF0),
+                        color = trackColor,
                         size = Size(size.width, size.height),
                         cornerRadius = androidx.compose.ui.geometry.CornerRadius(8.dp.toPx(), 8.dp.toPx())
                     )
@@ -848,7 +1062,8 @@ private fun ChartLegend(
                 rowModels.forEach { modelId ->
                     LegendItem(
                         color = palette[modelIds.indexOf(modelId) % palette.size],
-                        label = modelId
+                        label = modelId,
+                        code = modelTag(modelIds.indexOf(modelId))
                     )
                 }
             }
@@ -860,13 +1075,21 @@ private fun ChartLegend(
 private fun LegendValueRow(
     color: Color,
     label: String,
-    value: String
+    value: String,
+    code: String
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        Text(
+            text = code,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.width(22.dp)
+        )
         Canvas(modifier = Modifier.size(10.dp)) {
             drawCircle(color = color)
         }
@@ -887,12 +1110,19 @@ private fun LegendValueRow(
 @Composable
 private fun LegendItem(
     color: Color,
-    label: String
+    label: String,
+    code: String
 ) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
     ) {
+        Text(
+            text = code,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         Canvas(modifier = Modifier.size(10.dp)) {
             drawRect(color = color)
         }
