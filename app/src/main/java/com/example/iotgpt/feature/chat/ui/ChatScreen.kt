@@ -8,7 +8,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
-import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -20,6 +19,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.StartOffset
@@ -85,6 +85,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
@@ -119,6 +120,7 @@ import com.example.iotgpt.ui.theme.LotColors
 import com.example.iotgpt.ui.theme.LotMotion
 import com.example.iotgpt.ui.theme.LotRadius
 import com.example.iotgpt.ui.theme.LotSpacing
+import com.example.iotgpt.ui.theme.rememberReduceMotion
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -145,6 +147,15 @@ fun ChatScreen(
     }
     val audioRecorder = remember { AudioRecorder(context) }
     val messageListState = rememberLazyListState()
+    val conversationFade = remember { Animatable(1f) }
+    LaunchedEffect(uiState.currentConversationId) {
+        if (reduceMotion) {
+            conversationFade.snapTo(1f)
+        } else {
+            conversationFade.snapTo(0f)
+            conversationFade.animateTo(1f, animationSpec = tween(LotMotion.normal))
+        }
+    }
     var draft by rememberSaveable { mutableStateOf("") }
     var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
     var pendingClawCapture by remember { mutableStateOf<CapturedFile?>(null) }
@@ -882,6 +893,7 @@ fun ChatScreen(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
+                    .graphicsLayer { alpha = conversationFade.value }
                     .testTag(AppTestTags.CHAT_MESSAGES),
                 state = messageListState,
                 reverseLayout = uiState.messages.isNotEmpty(),
@@ -1272,18 +1284,6 @@ private fun ComposerActionIcon(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun rememberReduceMotion(): Boolean {
-    val context = LocalContext.current
-    return remember {
-        Settings.Global.getFloat(
-            context.contentResolver,
-            Settings.Global.ANIMATOR_DURATION_SCALE,
-            1f
-        ) == 0f
     }
 }
 
@@ -2161,9 +2161,16 @@ private fun HistoryActionIconButton(
     action: HistoryAction,
     onClick: () -> Unit
 ) {
+    val description = when (action) {
+        HistoryAction.Rename -> "重命名会话"
+        HistoryAction.Delete -> "删除会话"
+        HistoryAction.More -> "更多会话操作"
+    }
     IconButton(
         onClick = onClick,
-        modifier = Modifier.size(48.dp)
+        modifier = Modifier
+            .size(48.dp)
+            .semantics { contentDescription = description }
     ) {
         val color = MaterialTheme.colorScheme.onSurfaceVariant
         Canvas(modifier = Modifier.size(17.dp)) {
