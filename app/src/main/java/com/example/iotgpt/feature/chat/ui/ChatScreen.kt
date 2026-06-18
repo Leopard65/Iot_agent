@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -16,6 +17,15 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.StartOffset
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -37,6 +47,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -128,6 +139,7 @@ fun ChatScreen(
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val reduceMotion = rememberReduceMotion()
     val clipboardManager = remember(context) {
         context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     }
@@ -889,16 +901,28 @@ fun ChatScreen(
                         items = visibleMessages.asReversed(),
                         key = { it.id }
                     ) { message ->
-                        MessageBubble(
-                            message = message,
-                            onCopy = { text ->
-                                clipboardManager.setPrimaryClip(
-                                    ClipData.newPlainText("lot message", text)
-                                )
-                                viewModel.showNotice("消息已复制")
-                            },
-                            onRetry = viewModel::retryAssistantMessage
-                        )
+                        Box(
+                            modifier = if (reduceMotion) {
+                                Modifier.fillMaxWidth()
+                            } else {
+                                Modifier
+                                    .fillMaxWidth()
+                                    .animateItem(fadeInSpec = tween(LotMotion.normal))
+                            }
+                        ) {
+                            MessageBubble(
+                                message = message,
+                                modelLabel = uiState.activeModelProfile?.model ?: "模型",
+                                reduceMotion = reduceMotion,
+                                onCopy = { text ->
+                                    clipboardManager.setPrimaryClip(
+                                        ClipData.newPlainText("lot message", text)
+                                    )
+                                    viewModel.showNotice("消息已复制")
+                                },
+                                onRetry = viewModel::retryAssistantMessage
+                            )
+                        }
                     }
                     if (visibleMessages.size < uiState.messages.size) {
                         item(key = "load-older-messages") {
@@ -931,15 +955,29 @@ fun ChatScreen(
             }
 
             AppSectionCard(contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)) {
-                val clawAccent = LotColors.Claw
-                pendingAttachment?.let { attachment ->
-                    PendingAttachmentCard(
-                        attachment = attachment,
-                        onRemove = {
-                            pendingAttachment = null
-                            viewModel.showNotice("附件已移除")
-                        }
-                    )
+                val accent by animateColorAsState(
+                    targetValue = if (uiState.isClawMode) LotColors.Claw else MaterialTheme.colorScheme.primary,
+                    animationSpec = tween(if (reduceMotion) 0 else LotMotion.normal),
+                    label = "claw-accent"
+                )
+                var lastPendingAttachment by remember { mutableStateOf<PendingAttachment?>(null) }
+                LaunchedEffect(pendingAttachment) {
+                    pendingAttachment?.let { lastPendingAttachment = it }
+                }
+                AnimatedVisibility(
+                    visible = pendingAttachment != null,
+                    enter = if (reduceMotion) EnterTransition.None else expandVertically(animationSpec = tween(LotMotion.normal)) + fadeIn(animationSpec = tween(LotMotion.normal)),
+                    exit = if (reduceMotion) ExitTransition.None else shrinkVertically(animationSpec = tween(LotMotion.fast)) + fadeOut(animationSpec = tween(LotMotion.fast))
+                ) {
+                    (pendingAttachment ?: lastPendingAttachment)?.let { attachment ->
+                        PendingAttachmentCard(
+                            attachment = attachment,
+                            onRemove = {
+                                pendingAttachment = null
+                                viewModel.showNotice("附件已移除")
+                            }
+                        )
+                    }
                 }
                 if (showRecordingPanel || isRecording || recordingCountdownSeconds > 0) {
                     RecordingControlCard(
@@ -987,16 +1025,11 @@ fun ChatScreen(
                             Text(if (uiState.isClawMode) "输入 Claw 本地指令" else "向 lot 提问，或粘贴资料")
                         },
                         shape = RoundedCornerShape(LotRadius.lg),
-                        colors = if (uiState.isClawMode) {
-                            OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = clawAccent,
-                                unfocusedBorderColor = clawAccent.copy(alpha = 0.72f),
-                                cursorColor = clawAccent,
-                                focusedLabelColor = clawAccent
-                            )
-                        } else {
-                            OutlinedTextFieldDefaults.colors()
-                        }
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = accent,
+                            cursorColor = accent,
+                            focusedLabelColor = accent
+                        )
                     )
                     Box {
                         IconButton(
@@ -1081,14 +1114,14 @@ fun ChatScreen(
                                 },
                             shape = RoundedCornerShape(LotRadius.lg),
                             contentPadding = PaddingValues(0.dp),
-                            colors = if (uiState.isClawMode) {
-                                ButtonDefaults.buttonColors(
-                                    containerColor = clawAccent,
-                                    contentColor = LotColors.OnClaw
-                                )
-                            } else {
-                                ButtonDefaults.buttonColors()
-                            }
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = accent,
+                                contentColor = if (uiState.isClawMode) {
+                                    LotColors.OnClaw
+                                } else {
+                                    MaterialTheme.colorScheme.onPrimary
+                                }
+                            )
                         ) {
                             ComposerActionIcon(
                                 action = if (uiState.isClawMode) ComposerAction.Execute else ComposerAction.Send,
@@ -1239,6 +1272,70 @@ private fun ComposerActionIcon(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun rememberReduceMotion(): Boolean {
+    val context = LocalContext.current
+    return remember {
+        Settings.Global.getFloat(
+            context.contentResolver,
+            Settings.Global.ANIMATOR_DURATION_SCALE,
+            1f
+        ) == 0f
+    }
+}
+
+@Composable
+private fun ThinkingIndicator(
+    modelLabel: String,
+    reduceMotion: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val dotColor = MaterialTheme.colorScheme.primary
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (reduceMotion) {
+            repeat(3) {
+                Box(
+                    modifier = Modifier
+                        .size(7.dp)
+                        .clip(CircleShape)
+                        .background(dotColor.copy(alpha = 0.7f))
+                )
+            }
+        } else {
+            val transition = rememberInfiniteTransition(label = "thinking")
+            repeat(3) { index ->
+                val alpha by transition.animateFloat(
+                    initialValue = 0.3f,
+                    targetValue = 1f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(600, easing = FastOutSlowInEasing),
+                        repeatMode = RepeatMode.Reverse,
+                        initialStartOffset = StartOffset(index * 160)
+                    ),
+                    label = "thinking-dot-$index"
+                )
+                Box(
+                    modifier = Modifier
+                        .size(7.dp)
+                        .clip(CircleShape)
+                        .background(dotColor.copy(alpha = alpha))
+                )
+            }
+        }
+        Text(
+            text = "$modelLabel · 思考中",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -2257,6 +2354,8 @@ private fun PromptDeckItem(
 @Composable
 private fun MessageBubble(
     message: MessageEntity,
+    modelLabel: String,
+    reduceMotion: Boolean,
     onCopy: (String) -> Unit,
     onRetry: (String) -> Unit
 ) {
@@ -2329,19 +2428,13 @@ private fun MessageBubble(
             }
             if (message.isStreaming) {
                 if (message.content.isBlank()) {
-                    Text(
-                        text = "正在请求模型回复...",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+                    ThinkingIndicator(modelLabel = modelLabel, reduceMotion = reduceMotion)
                 } else {
                     MessageContent(message.content)
+                    ThinkingIndicator(modelLabel = modelLabel, reduceMotion = reduceMotion)
                 }
             } else {
                 MessageContent(message.content)
-            }
-            if (message.isStreaming) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
             if (!message.isStreaming && message.content.isNotBlank()) {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
