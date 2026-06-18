@@ -82,12 +82,6 @@ fun StatsScreen(
     ) {
         MetricsGrid(uiState)
 
-        StatsInsightCard(uiState)
-
-        AppSectionCard(modifier = Modifier.fillMaxWidth()) {
-            ModelConfigSummary(uiState)
-        }
-
         ModelAnalyticsPanel(
             uiState = uiState,
             selectedMode = chartMode,
@@ -108,12 +102,6 @@ fun StatsScreen(
                 StatusPill("智能体任务 ${uiState.agentTaskCount}")
                 StatusPill("已完成 ${uiState.completedAgentTasks}")
             }
-            Text(
-                text = "最近请求：${formatTime(uiState.lastModelRequestAt)} · 当前模型：${uiState.activeModel}",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
             uiState.lastApiError?.let { error ->
                 Text(
                     text = "最近失败：$error",
@@ -123,87 +111,6 @@ fun StatsScreen(
             }
         }
     }
-}
-
-@Composable
-private fun StatsInsightCard(uiState: StatsUiState) {
-    val insight = buildStatsInsight(uiState)
-    AppSectionCard(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "今日洞察",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    text = insight.primary,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            StatusPill(
-                text = insight.badge,
-                tone = insight.tone
-            )
-        }
-        Text(
-            text = insight.secondary,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
-private data class StatsInsight(
-    val primary: String,
-    val secondary: String,
-    val badge: String,
-    val tone: StatusTone
-)
-
-private fun buildStatsInsight(uiState: StatsUiState): StatsInsight {
-    val today = uiState.messageTrend.lastOrNull()?.count ?: uiState.todayMessages
-    val yesterday = uiState.messageTrend.dropLast(1).lastOrNull()?.count ?: 0
-    val delta = today - yesterday
-    val trendText = when {
-        today == 0 && uiState.totalMessages == 0 -> "还没有对话数据，发起一次 AI 对话后这里会自动生成洞察。"
-        delta > 0 -> "今天消息比昨天多 $delta 条，当前使用活跃度在上升。"
-        delta < 0 -> "今天消息比昨天少 ${-delta} 条，可以用资料总结、写作润色或学习问题继续测试。"
-        else -> "今天消息与昨天持平，适合继续补充长对话和多模态样例。"
-    }
-    val topModel = uiState.modelUsage.maxByOrNull { it.callCount }
-    val modelText = if (topModel != null) {
-        "主力模型 ${topModel.modelId} 已调用 ${topModel.callCount} 次，累计 ${formatAmount(topModel.totalTokens)} token/字符。"
-    } else {
-        "暂无模型调用记录，配置 API Key 后可在这里看到模型使用排行。"
-    }
-    val agentText = if (uiState.agentTaskCount > 0) {
-        "Claw 任务完成 ${uiState.completedAgentTasks}/${uiState.agentTaskCount}，可用于追踪本地智能体能力。"
-    } else {
-        "Claw 本地任务尚未产生记录。"
-    }
-    val badge = when {
-        uiState.lastApiError != null -> "需排查"
-        uiState.networkStatus.isConnected && uiState.activeApiKeyConfigured -> "可演示"
-        uiState.networkStatus.isConnected -> "待配置"
-        else -> "离线"
-    }
-    val tone = when (badge) {
-        "可演示" -> StatusTone.Success
-        "需排查" -> StatusTone.Neutral
-        else -> StatusTone.Primary
-    }
-    return StatsInsight(
-        primary = trendText,
-        secondary = "$modelText $agentText",
-        badge = badge,
-        tone = tone
-    )
 }
 
 private enum class ModelChartMode(
@@ -402,7 +309,7 @@ private fun ModelAnalyticsPanel(
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    text = "上传 ${formatAmount(uiState.totalPromptTokens.toLong())} · 下载 ${formatAmount(uiState.totalCompletionTokens.toLong())} · 总计 ${formatAmount(uiState.totalTokens)}$estimateSuffix",
+                    text = "Token/字符 总计 ${formatAmount(uiState.totalTokens)}$estimateSuffix",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1132,33 +1039,6 @@ private fun LegendItem(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1
         )
-    }
-}
-
-@Composable
-private fun ModelConfigSummary(uiState: StatsUiState) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(
-            text = "当前配置：${uiState.activeProfileName}",
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.SemiBold
-        )
-        Text(
-            text = "${uiState.activeProvider} · ${uiState.activeModel} · ${uiState.activeBaseUrlHost}",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            StatusPill(
-                text = if (uiState.activeApiKeyConfigured) "Key 已配置" else "Key 未配置",
-                tone = if (uiState.activeApiKeyConfigured) StatusTone.Success else StatusTone.Neutral
-            )
-            StatusPill(
-                text = if (uiState.activeSupportsVision) "图片输入已开启" else "图片输入未开启",
-                tone = if (uiState.activeSupportsVision) StatusTone.Success else StatusTone.Neutral
-            )
-        }
     }
 }
 
