@@ -1,5 +1,12 @@
 package com.example.iotgpt.feature.welcome.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -25,6 +32,9 @@ import com.example.iotgpt.core.components.AppSectionCard
 import com.example.iotgpt.core.components.StatusPill
 import com.example.iotgpt.core.components.StatusTone
 import com.example.iotgpt.core.testing.AppTestTags
+import com.example.iotgpt.ui.theme.LotMotion
+import com.example.iotgpt.ui.theme.LotSpacing
+import com.example.iotgpt.ui.theme.rememberReduceMotion
 
 /**
  * First-launch onboarding for the lot app.
@@ -35,8 +45,8 @@ fun WelcomeScreen(
     onFinished: () -> Unit
 ) {
     var pageIndex by rememberSaveable { mutableIntStateOf(0) }
-    val page = onboardingPages[pageIndex]
     val isLastPage = pageIndex == onboardingPages.lastIndex
+    val reduceMotion = rememberReduceMotion()
 
     AppPage(
         title = "欢迎使用 lot",
@@ -51,44 +61,63 @@ fun WelcomeScreen(
             modifier = Modifier.fillMaxWidth()
         )
 
-        AppSectionCard(
-            modifier = Modifier.fillMaxWidth(),
-            contentPadding = PaddingValues(14.dp)
-        ) {
-            StatusPill(page.tag, tone = StatusTone.Success)
-            Text(
-                text = page.title,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = page.description,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 4,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
+        AnimatedContent(
+            targetState = pageIndex,
+            transitionSpec = {
+                if (reduceMotion) {
+                    fadeIn(tween(0)) togetherWith fadeOut(tween(0))
+                } else {
+                    val direction = if (targetState >= initialState) 1 else -1
+                    (slideInHorizontally(tween(LotMotion.normal)) { full -> direction * full / 5 } +
+                        fadeIn(tween(LotMotion.normal))) togetherWith
+                        (slideOutHorizontally(tween(LotMotion.normal)) { full -> -direction * full / 5 } +
+                            fadeOut(tween(LotMotion.fast)))
+                }
+            },
+            label = "onboarding-page"
+        ) { index ->
+            val page = onboardingPages[index]
+            Column(verticalArrangement = Arrangement.spacedBy(LotSpacing.md)) {
+                AppSectionCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(14.dp)
+                ) {
+                    StatusPill(page.tag, tone = StatusTone.Success)
+                    Text(
+                        text = page.title,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = page.description,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 4,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
 
-        AppSectionCard(
-            modifier = Modifier.fillMaxWidth(),
-            contentPadding = PaddingValues(14.dp)
-        ) {
-            Text(
-                text = "本页准备内容",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            Text(
-                text = page.readyText,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis
-            )
-            page.readyItems.forEach { item ->
-                ReadyItemRow(item)
+                AppSectionCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(14.dp)
+                ) {
+                    Text(
+                        text = "本页准备内容",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = page.readyText,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    page.readyItems.forEach { item ->
+                        ReadyItemRow(item)
+                    }
+                }
             }
         }
 
