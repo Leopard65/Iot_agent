@@ -526,6 +526,7 @@ private fun ModelUsageDistributionChart(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(220.dp)
+                .semantics { contentDescription = "模型消耗分布柱状图，${data.size} 个时间段，Token/字符估算总计 ${formatAmount(total)}" }
                 .pointerInput(data) {
                     detectTapGestures { offset ->
                         val plotLeft = 10f
@@ -656,6 +657,7 @@ private fun ModelCallTrendChart(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(220.dp)
+                .semantics { contentDescription = "模型调用趋势折线图，总计 $total 次" }
                 .pointerInput(data) {
                     detectTapGestures { offset ->
                         val plotLeft = 10f
@@ -759,6 +761,7 @@ private fun ModelCallCountDonutChart(
             Canvas(
                 modifier = Modifier
                     .size(180.dp)
+                    .semantics { contentDescription = "模型调用次数占比环形图，总计 $total 次" }
                     .pointerInput(data, total) {
                         detectTapGestures { offset ->
                             if (total <= 0L) return@detectTapGestures
@@ -882,6 +885,7 @@ private fun ModelCallRankingChart(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(18.dp)
+                        .semantics { contentDescription = "${item.modelId}，调用 ${item.callCount} 次" }
                         .pointerInput(item) {
                             detectTapGestures {
                                 onInsight(
