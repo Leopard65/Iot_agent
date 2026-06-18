@@ -626,20 +626,6 @@ private fun CardTitle(title: String, subtitle: String) {
 }
 
 @Composable
-private fun TerminalTaskLog(task: AgentTaskEntity) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color(0xFF05080E), RoundedCornerShape(8.dp))
-            .padding(10.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        TerminalLogLine("[claw-agent] >> tool=${task.type} status=${task.status}", padded = false)
-        TerminalLogLine("[system] >> ${task.description}", padded = false)
-    }
-}
-
-@Composable
 private fun TaskStatusCard(task: AgentTaskEntity) {
     val tone = agentTaskStatusTone(task.status)
     val borderColor = when (task.status.lowercase()) {
@@ -702,11 +688,11 @@ private fun TerminalLogLine(
         text = text,
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xFF05080E), RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(LotRadius.md))
             .then(if (padded) Modifier.padding(10.dp) else Modifier),
         style = MaterialTheme.typography.bodySmall,
         fontFamily = FontFamily.Monospace,
-        color = Color(0xFF00FF66),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
         maxLines = 2,
         overflow = TextOverflow.Ellipsis
     )
@@ -714,6 +700,8 @@ private fun TerminalLogLine(
 
 @Composable
 private fun SectorProgressView(progress: Int) {
+    val activeColor = MaterialTheme.colorScheme.primary
+    val trackColor = MaterialTheme.colorScheme.surfaceVariant
     Canvas(
         modifier = Modifier
             .fillMaxWidth()
@@ -730,7 +718,7 @@ private fun SectorProgressView(progress: Int) {
             repeat(columns) { column ->
                 val index = row * columns + column
                 drawRoundRect(
-                    color = if (index < activeCells) Color(0xFF00E5FF) else Color(0xFF1E293B),
+                    color = if (index < activeCells) activeColor else trackColor,
                     topLeft = Offset(
                         x = column * (cellWidth + gap),
                         y = row * (cellHeight + gap)
