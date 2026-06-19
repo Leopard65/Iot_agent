@@ -14,8 +14,11 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -71,9 +74,12 @@ class StatsViewModel(
             }
         }
         viewModelScope.launch {
-            messageDao.observeMessageTimesSince(startOfRecentDaysMillis(DAYS_IN_TREND)).collect { times ->
-                _uiState.update { it.copy(messageTrend = buildTrend(times)) }
-            }
+            messageDao.observeMessageTimesSince(startOfRecentDaysMillis(DAYS_IN_TREND))
+                .map { times -> buildTrend(times) }
+                .flowOn(Dispatchers.Default)
+                .collect { trend ->
+                    _uiState.update { it.copy(messageTrend = trend) }
+                }
         }
     }
 
@@ -95,19 +101,32 @@ class StatsViewModel(
             }
         }
         viewModelScope.launch {
-            modelUsageDao.observeUsageRecords().collect { records ->
-                _uiState.update {
-                    it.copy(
-                        modelUsageByDay = buildUsageByDay(records),
-                        modelUsageByHour = buildUsageByHour(records),
-                        modelUsageDistribution = buildModelUsageDistribution(records),
-                        modelCallTrend = buildModelCallTrend(records),
-                        totalPromptTokens = records.sumOf { record -> record.promptTokens },
-                        totalCompletionTokens = records.sumOf { record -> record.completionTokens },
-                        estimatedModelUsageCount = records.count { record -> record.isEstimated }
+            modelUsageDao.observeUsageRecords()
+                .map { records ->
+                    ModelUsageAggregate(
+                        byDay = buildUsageByDay(records),
+                        byHour = buildUsageByHour(records),
+                        distribution = buildModelUsageDistribution(records),
+                        callTrend = buildModelCallTrend(records),
+                        promptTokens = records.sumOf { record -> record.promptTokens },
+                        completionTokens = records.sumOf { record -> record.completionTokens },
+                        estimatedCount = records.count { record -> record.isEstimated }
                     )
                 }
-            }
+                .flowOn(Dispatchers.Default)
+                .collect { aggregate ->
+                    _uiState.update {
+                        it.copy(
+                            modelUsageByDay = aggregate.byDay,
+                            modelUsageByHour = aggregate.byHour,
+                            modelUsageDistribution = aggregate.distribution,
+                            modelCallTrend = aggregate.callTrend,
+                            totalPromptTokens = aggregate.promptTokens,
+                            totalCompletionTokens = aggregate.completionTokens,
+                            estimatedModelUsageCount = aggregate.estimatedCount
+                        )
+                    }
+                }
         }
     }
 
@@ -281,14 +300,8 @@ class StatsViewModel(
         }.timeInMillis
     }
 
-    private fun Long.toHourStartMillis(): Long {
-        return Calendar.getInstance().apply {
-            timeInMillis = this@toHourStartMillis
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }.timeInMillis
-    }
+    // 纯 epoch 运算截断到整点，避免对每条记录都新建 Calendar；整点偏移时区下与本地结果一致。
+    private fun Long.toHourStartMillis(): Long = this - (this % ONE_HOUR_MILLIS)
 
     private fun dayFormat(): SimpleDateFormat = SimpleDateFormat("MM-dd", Locale.getDefault())
 
@@ -299,6 +312,16 @@ class StatsViewModel(
     private fun ModelUsageEntity.usageAmount(): Long {
         return totalTokens.toLong().takeIf { it > 0L } ?: 1L
     }
+
+    private data class ModelUsageAggregate(
+        val byDay: List<UsageBucket>,
+        val byHour: List<UsageBucket>,
+        val distribution: List<StackedUsageBucket>,
+        val callTrend: List<StackedUsageBucket>,
+        val promptTokens: Int,
+        val completionTokens: Int,
+        val estimatedCount: Int
+    )
 
     private companion object {
         const val DAYS_IN_TREND = 7
