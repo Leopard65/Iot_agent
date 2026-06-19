@@ -24,8 +24,6 @@ object LotMotion {
 }
 
 object LotColors {
-    val Ai = Color(0xFF2563EB)
-    val Iot = Color(0xFF10B981)
     val Claw = Color(0xFF22C55E)
     val OnClaw = Color(0xFF06120B)
     val Warning = Color(0xFFF59E0B)

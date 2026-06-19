@@ -52,6 +52,7 @@ import com.example.iotgpt.core.components.StatusPill
 import com.example.iotgpt.core.components.StatusTone
 import com.example.iotgpt.core.preferences.ModelProfile
 import com.example.iotgpt.core.preferences.ThemeMode
+import com.example.iotgpt.ui.theme.LotRadius
 
 /**
  * Settings screen for model profiles and app preferences.
@@ -217,7 +218,7 @@ private fun SettingsStatusBanner(message: String?) {
         text = message,
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(LotRadius.md))
             .background(MaterialTheme.colorScheme.secondaryContainer)
             .padding(horizontal = 12.dp, vertical = 9.dp),
         style = MaterialTheme.typography.labelMedium,
@@ -662,7 +663,7 @@ private fun ModelProfileRow(
     connectionResult: String?,
     onTest: () -> Unit
 ) {
-    val shape = RoundedCornerShape(8.dp)
+    val shape = RoundedCornerShape(LotRadius.md)
     val borderColor = if (selected) {
         MaterialTheme.colorScheme.primary.copy(alpha = 0.34f)
     } else {

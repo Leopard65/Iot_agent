@@ -1402,7 +1402,7 @@ private fun RecordingControlCard(
             .testTag(AppTestTags.CHAT_RECORDING_PANEL)
             .background(
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                shape = RoundedCornerShape(8.dp)
+                shape = RoundedCornerShape(LotRadius.md)
             )
             .padding(10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -2015,7 +2015,7 @@ private fun ClawTaskLogItem(task: AgentTaskEntity) {
         "failed" -> MaterialTheme.colorScheme.error
         else -> MaterialTheme.colorScheme.outline
     }
-    val shape = RoundedCornerShape(8.dp)
+    val shape = RoundedCornerShape(LotRadius.md)
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -2430,9 +2430,9 @@ private fun MessageBubble(
                 .widthIn(max = 560.dp)
                 .background(
                     color = bubbleColor,
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(LotRadius.md)
                 )
-                .border(1.dp, outlineColor, RoundedCornerShape(8.dp))
+                .border(1.dp, outlineColor, RoundedCornerShape(LotRadius.md))
                 .padding(horizontal = 12.dp, vertical = 10.dp)
                 .heightIn(min = 36.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -2540,7 +2540,7 @@ private fun CodeBlock(rawCode: String, onCopy: (String) -> Unit) {
             .fillMaxWidth()
             .background(
                 color = MaterialTheme.colorScheme.surfaceVariant,
-                shape = RoundedCornerShape(8.dp)
+                shape = RoundedCornerShape(LotRadius.md)
             )
             .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -2591,12 +2591,12 @@ private fun PendingAttachmentCard(
             .testTag(AppTestTags.CHAT_PENDING_ATTACHMENT)
             .background(
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                shape = RoundedCornerShape(8.dp)
+                shape = RoundedCornerShape(LotRadius.md)
             )
             .border(
                 width = 1.dp,
                 color = tint.copy(alpha = 0.32f),
-                shape = RoundedCornerShape(8.dp)
+                shape = RoundedCornerShape(LotRadius.md)
             )
             .padding(10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -2656,12 +2656,12 @@ private fun AttachmentCard(attachment: AttachmentPreview) {
             .fillMaxWidth()
             .background(
                 color = MaterialTheme.colorScheme.surface,
-                shape = RoundedCornerShape(8.dp)
+                shape = RoundedCornerShape(LotRadius.md)
             )
             .border(
                 width = 1.dp,
                 color = MaterialTheme.colorScheme.outline.copy(alpha = 0.32f),
-                shape = RoundedCornerShape(8.dp)
+                shape = RoundedCornerShape(LotRadius.md)
             )
             .padding(10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -2708,7 +2708,7 @@ private fun AttachmentCard(attachment: AttachmentPreview) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(180.dp)
-                    .clip(RoundedCornerShape(8.dp)),
+                    .clip(RoundedCornerShape(LotRadius.md)),
                 contentScale = ContentScale.Crop
             )
         }
@@ -2741,7 +2741,7 @@ private fun AttachmentTypeBadge(
     Text(
         text = text,
         modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(LotRadius.md))
             .background(tint.copy(alpha = 0.12f))
             .padding(horizontal = 8.dp, vertical = 6.dp),
         style = MaterialTheme.typography.labelMedium,
