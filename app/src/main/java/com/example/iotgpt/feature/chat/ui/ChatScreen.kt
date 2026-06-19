@@ -30,6 +30,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
@@ -49,6 +50,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
@@ -2389,31 +2391,35 @@ private fun MessageBubble(
 ) {
     val isUser = message.role == "user"
     val isClaw = message.role == "system"
+    val canRetry = !isUser &&
+        !isClaw &&
+        !message.isStreaming &&
+        isRetryableAssistantError(message.content)
     val bubbleColor = when {
         isUser -> MaterialTheme.colorScheme.primaryContainer
         isClaw -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.74f)
+        canRetry -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f)
         else -> MaterialTheme.colorScheme.surfaceContainerHigh
     }
     val outlineColor = when {
         isUser -> MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
         isClaw -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.24f)
+        canRetry -> MaterialTheme.colorScheme.error.copy(alpha = 0.55f)
         else -> MaterialTheme.colorScheme.outline.copy(alpha = 0.30f)
     }
     val labelText = when {
         isUser -> "用户"
         isClaw -> "Claw 本地"
         message.isStreaming -> "AI 助手 · 思考中"
+        canRetry -> "AI 助手 · 失败"
         else -> "AI 助手"
     }
     val labelColor = when {
         isUser -> MaterialTheme.colorScheme.onPrimaryContainer
         isClaw -> MaterialTheme.colorScheme.onSecondaryContainer
+        canRetry -> MaterialTheme.colorScheme.error
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
-    val canRetry = !isUser &&
-        !isClaw &&
-        !message.isStreaming &&
-        isRetryableAssistantError(message.content)
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
@@ -2458,19 +2464,31 @@ private fun MessageBubble(
                 if (message.content.isBlank()) {
                     ThinkingIndicator(modelLabel = modelLabel, reduceMotion = reduceMotion)
                 } else {
-                    MessageContent(message.content)
+                    MessageContent(message.content, onCopy)
                     ThinkingIndicator(modelLabel = modelLabel, reduceMotion = reduceMotion)
                 }
             } else {
-                MessageContent(message.content)
+                MessageContent(message.content, onCopy)
             }
             if (!message.isStreaming && message.content.isNotBlank()) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     TextButton(onClick = { onCopy(message.content) }) {
                         Text("复制")
                     }
                     if (canRetry) {
-                        TextButton(onClick = { onRetry(message.id) }) {
+                        Spacer(modifier = Modifier.weight(1f))
+                        Button(
+                            onClick = { onRetry(message.id) },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.error,
+                                contentColor = MaterialTheme.colorScheme.onError
+                            ),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+                        ) {
                             Text("重试")
                         }
                     }
@@ -2487,13 +2505,13 @@ private fun isRetryableAssistantError(content: String): Boolean {
 }
 
 @Composable
-private fun MessageContent(content: String) {
+private fun MessageContent(content: String, onCopy: (String) -> Unit) {
     val parts = content.split("```")
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         parts.forEachIndexed { index, part ->
             if (part.isBlank()) return@forEachIndexed
             if (index % 2 == 1) {
-                CodeBlock(part)
+                CodeBlock(part, onCopy)
             } else {
                 Text(
                     text = part.trim(),
@@ -2506,28 +2524,59 @@ private fun MessageContent(content: String) {
 }
 
 @Composable
-private fun CodeBlock(rawCode: String) {
+private fun CodeBlock(rawCode: String, onCopy: (String) -> Unit) {
     val lines = rawCode.trim().lines()
     val firstLine = lines.firstOrNull().orEmpty()
-    val code = if (firstLine.matches(Regex("[A-Za-z0-9_+.#-]{1,24}")) && lines.size > 1) {
+    val hasLanguage = firstLine.matches(Regex("[A-Za-z0-9_+.#-]{1,24}")) && lines.size > 1
+    val language = if (hasLanguage) firstLine else "代码"
+    val code = if (hasLanguage) {
         lines.drop(1).joinToString("\n")
     } else {
         rawCode.trim()
     }
 
-    Text(
-        text = code,
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(
                 color = MaterialTheme.colorScheme.surfaceVariant,
                 shape = RoundedCornerShape(8.dp)
             )
-            .padding(10.dp),
-        style = MaterialTheme.typography.bodySmall,
-        fontFamily = FontFamily.Monospace,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = language,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            TextButton(
+                onClick = { onCopy(code) },
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+            ) {
+                Text("复制", style = MaterialTheme.typography.labelSmall)
+            }
+        }
+        Text(
+            text = code,
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            style = MaterialTheme.typography.bodySmall,
+            fontFamily = FontFamily.Monospace,
+            color = MaterialTheme.colorScheme.onSurface,
+            softWrap = false
+        )
+    }
 }
 
 @Composable
