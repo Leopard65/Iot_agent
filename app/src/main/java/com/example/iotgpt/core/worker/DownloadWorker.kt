@@ -35,13 +35,18 @@ class DownloadWorker(
                     outputFile.outputStream().use { output ->
                         val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                         var downloaded = 0L
+                        var lastProgress = -1
                         while (true) {
                             val read = input.read(buffer)
                             if (read == -1) break
                             output.write(buffer, 0, read)
                             downloaded += read
                             val progress = ((downloaded * 100L) / total).toInt().coerceIn(0, 100)
-                            setProgress(Data.Builder().putInt(KEY_PROGRESS, progress).build())
+                            // 仅在百分比变化时上报，避免每个 8KB 缓冲都跨 WorkManager IPC 写一次进度
+                            if (progress != lastProgress) {
+                                lastProgress = progress
+                                setProgress(Data.Builder().putInt(KEY_PROGRESS, progress).build())
+                            }
                         }
                     }
                 }
