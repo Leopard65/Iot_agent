@@ -16,3 +16,6 @@
 .cxx
 local.properties
 .superpowers/
+
+# 本地构建日志（assembleDebug / testDebugUnitTest 的 tee 输出）
+/build_*.log
