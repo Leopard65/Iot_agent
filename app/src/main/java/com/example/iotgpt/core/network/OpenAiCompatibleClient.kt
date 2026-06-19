@@ -29,11 +29,7 @@ private const val SYSTEM_PROMPT =
  * OkHttp implementation of the OpenAI-compatible Chat Completions API.
  */
 class OpenAiCompatibleClient(
-    private val client: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
-        .build()
+    private val client: OkHttpClient = sharedClient
 ) : LlmApiService {
     override suspend fun createChatCompletion(
         settings: LlmSettings,
@@ -392,5 +388,12 @@ class OpenAiCompatibleClient(
     private companion object {
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
         val OCTET_STREAM_MEDIA_TYPE = "application/octet-stream".toMediaType()
+
+        // 共享单个 OkHttpClient（持有连接池与线程池），避免每个实例各建一份。
+        val sharedClient: OkHttpClient = OkHttpClient.Builder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
+            .build()
     }
 }
