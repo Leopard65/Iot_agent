@@ -41,6 +41,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -815,6 +817,9 @@ fun ChatScreen(
         AppPage(
             title = uiState.currentConversation?.title ?: "lot 对话",
             subtitle = "",
+            modifier = Modifier
+                .navigationBarsPadding()
+                .imePadding(),
             scrollable = false,
             showHeader = false,
         ) {
