@@ -125,8 +125,10 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import coil.compose.AsyncImage
 
 /**
@@ -223,39 +225,49 @@ fun ChatScreen(
         followStartMessageCount = uiState.messages.size
     }
 
-    fun prepareAttachment(type: String, uri: Uri): Boolean {
-        if (FileUtils.isTooLarge(context, uri)) {
-            viewModel.showError("文件超过 10MB，暂不支持上传")
-            return false
-        }
-        val info = FileUtils.queryAttachmentInfo(context, uri)
-        val textPreview = if (type == "document") {
-            FileUtils.readTextPreviewIfPossible(context, uri)
-        } else {
-            null
-        }
-        val json = FileUtils.buildAttachmentJson(
-            context = context,
-            type = type,
-            uri = uri,
-            textPreview = textPreview
-        )
+    suspend fun prepareAttachment(type: String, uri: Uri): Boolean {
         val typeLabel = when (type) {
             "image" -> "图片"
             "audio" -> "录音"
             else -> "文档"
         }
-        val sizeLabel = FileUtils.formatSize(info.sizeBytes)
-        val mimeType = info.mimeType ?: "未知"
-        val content = "用户上传$typeLabel：${info.displayName}，大小 $sizeLabel，类型 $mimeType。"
-        pendingAttachment = PendingAttachment(
-            type = type,
-            json = json,
-            displayName = info.displayName,
-            sizeLabel = sizeLabel,
-            mimeType = info.mimeType,
-            baseContent = content
-        )
+        if (type == "document") {
+            viewModel.showNotice("正在读取文档…")
+        }
+        // 文件查询与 PDF/DOCX 正文提取放到 IO 线程，避免阻塞主线程导致 ANR
+        val attachment = withContext(Dispatchers.IO) {
+            if (FileUtils.isTooLarge(context, uri)) {
+                return@withContext null
+            }
+            val info = FileUtils.queryAttachmentInfo(context, uri)
+            val textPreview = if (type == "document") {
+                FileUtils.readTextPreviewIfPossible(context, uri)
+            } else {
+                null
+            }
+            val json = FileUtils.buildAttachmentJson(
+                context = context,
+                type = type,
+                uri = uri,
+                textPreview = textPreview
+            )
+            val sizeLabel = FileUtils.formatSize(info.sizeBytes)
+            val mimeType = info.mimeType ?: "未知"
+            val content = "用户上传$typeLabel：${info.displayName}，大小 $sizeLabel，类型 $mimeType。"
+            PendingAttachment(
+                type = type,
+                json = json,
+                displayName = info.displayName,
+                sizeLabel = sizeLabel,
+                mimeType = info.mimeType,
+                baseContent = content
+            )
+        }
+        if (attachment == null) {
+            viewModel.showError("文件超过 10MB，暂不支持上传")
+            return false
+        }
+        pendingAttachment = attachment
         viewModel.showNotice("$typeLabel 已添加，可直接发送，也可以继续输入说明后一起发送")
         return true
     }
@@ -274,7 +286,7 @@ fun ChatScreen(
                 viewModel.addClawPhotoResult(clawCapture.uri)
             }
             success && uri != null -> {
-                prepareAttachment("image", uri)
+                scope.launch { prepareAttachment("image", uri) }
             }
             clawCapture != null -> {
                 agentViewModel.logCameraFailure()
@@ -346,22 +358,24 @@ fun ChatScreen(
                 Intent.FLAG_GRANT_READ_URI_PERMISSION
             )
         }
-        val prepared = prepareAttachment("document", uri)
-        if (wasClawRequest) {
-            if (prepared) {
-                viewModel.logClawCommand(
-                    type = "document",
-                    status = "completed",
-                    description = "文档采集完成，附件已放入待发送区"
-                )
-                viewModel.addClawResult("Claw 已打开系统文件选择器并完成文档采集，附件已放入待发送区。")
-            } else {
-                viewModel.logClawCommand(
-                    type = "document",
-                    status = "failed",
-                    description = "文档采集失败：文件超过 10MB"
-                )
-                viewModel.addClawResult("Claw 文档采集失败：文件超过 10MB。")
+        scope.launch {
+            val prepared = prepareAttachment("document", uri)
+            if (wasClawRequest) {
+                if (prepared) {
+                    viewModel.logClawCommand(
+                        type = "document",
+                        status = "completed",
+                        description = "文档采集完成，附件已放入待发送区"
+                    )
+                    viewModel.addClawResult("Claw 已打开系统文件选择器并完成文档采集，附件已放入待发送区。")
+                } else {
+                    viewModel.logClawCommand(
+                        type = "document",
+                        status = "failed",
+                        description = "文档采集失败：文件超过 10MB"
+                    )
+                    viewModel.addClawResult("Claw 文档采集失败：文件超过 10MB。")
+                }
             }
         }
     }
@@ -504,24 +518,26 @@ fun ChatScreen(
             showRecordingPanel = false
             recordingElapsedSeconds = 0
             if (uri != null) {
-                val prepared = prepareAttachment("audio", uri)
-                if (pendingClawAudioRequest) {
-                    if (prepared) {
-                        viewModel.logClawCommand(
-                            type = "audio",
-                            status = "completed",
-                            description = "录音采集完成，音频附件已放入待发送区"
-                        )
-                        viewModel.addClawResult("Claw 已完成录音采集，音频附件已放入待发送区。")
-                    } else {
-                        viewModel.logClawCommand(
-                            type = "audio",
-                            status = "failed",
-                            description = "音频采集失败：文件超过 10MB"
-                        )
-                        viewModel.addClawResult("Claw 音频采集失败：文件超过 10MB。")
+                scope.launch {
+                    val prepared = prepareAttachment("audio", uri)
+                    if (pendingClawAudioRequest) {
+                        if (prepared) {
+                            viewModel.logClawCommand(
+                                type = "audio",
+                                status = "completed",
+                                description = "录音采集完成，音频附件已放入待发送区"
+                            )
+                            viewModel.addClawResult("Claw 已完成录音采集，音频附件已放入待发送区。")
+                        } else {
+                            viewModel.logClawCommand(
+                                type = "audio",
+                                status = "failed",
+                                description = "音频采集失败：文件超过 10MB"
+                            )
+                            viewModel.addClawResult("Claw 音频采集失败：文件超过 10MB。")
+                        }
+                        pendingClawAudioRequest = false
                     }
-                    pendingClawAudioRequest = false
                 }
             } else {
                 if (pendingClawAudioRequest) {
