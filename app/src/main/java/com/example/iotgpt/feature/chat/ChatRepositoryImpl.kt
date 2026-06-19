@@ -17,8 +17,14 @@ import com.example.iotgpt.core.preferences.SettingsStore
 import com.example.iotgpt.core.util.FileUtils
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
@@ -31,7 +37,8 @@ class ChatRepositoryImpl(
     private val settingsStore: SettingsStore,
     private val appContext: Context? = null,
     private val llmApiService: LlmApiService = OpenAiCompatibleClient(),
-    private val notificationHelper: NotificationHelper? = null
+    private val notificationHelper: NotificationHelper? = null,
+    private val summaryScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 ) : ChatRepository {
     private val conversationDao = database.conversationDao()
     private val messageDao = database.messageDao()
@@ -240,22 +247,31 @@ class ChatRepositoryImpl(
             settings = settings
         )
         val finalMessages = messageDao.getMessages(conversationId)
-        val summary = maybeGenerateSummaryIfNeeded(
-            conversationId = conversationId,
-            messages = finalMessages,
-            settings = settings
-        )
         refreshConversationMeta(
             conversationId = conversationId,
             messages = finalMessages,
-            updatedAt = assistantMessage.createdAt,
-            summaryOverride = summary
+            updatedAt = assistantMessage.createdAt
         )
         if (!assistantMessage.content.startsWith("API 请求失败")) {
             notificationHelper?.showAssistantReply(
                 conversationId = conversationId,
                 title = buildConversationTitle(finalMessages),
                 content = assistantMessage.content
+            )
+        }
+
+        // 摘要是一次额外的 LLM 调用，改为后台 fire-and-forget，不阻塞用户当前发送流程；
+        // 生成完成后再回填会话摘要。
+        summaryScope.launch {
+            val summary = maybeGenerateSummaryIfNeeded(
+                messages = finalMessages,
+                settings = settings
+            ) ?: return@launch
+            refreshConversationMeta(
+                conversationId = conversationId,
+                messages = messageDao.getMessages(conversationId),
+                updatedAt = System.currentTimeMillis(),
+                summaryOverride = summary
             )
         }
 
@@ -321,6 +337,18 @@ class ChatRepositoryImpl(
                 )
             )
         } catch (error: CancellationException) {
+            // 流式被取消（新消息打断 / 清空会话）时，先把这条消息定稿为非流式，
+            // 否则会残留 isStreaming=true 的孤儿消息，UI 上永久显示"思考中"转圈。
+            withContext(NonCancellable) {
+                val stopped = streamedContent.toString().trim().ifBlank { "已中断本次回复。" }
+                messageDao.upsertMessage(
+                    loadingMessage.copy(
+                        content = stopped,
+                        isStreaming = false,
+                        tokenCount = estimateTokenCount(stopped)
+                    )
+                )
+            }
             throw error
         } catch (error: Throwable) {
             Result.failure(error)
@@ -392,7 +420,6 @@ class ChatRepositoryImpl(
     }
 
     private suspend fun maybeGenerateSummaryIfNeeded(
-        conversationId: String,
         messages: List<MessageEntity>,
         settings: LlmSettings
     ): String? {
@@ -412,13 +439,7 @@ class ChatRepositoryImpl(
                 messages = listOf(LlmChatMessage(role = "user", content = prompt)),
                 temperature = 0.2
             )
-            recordModelUsage(
-                modelId = settings.model,
-                conversationId = conversationId,
-                result = result,
-                requestMessages = listOf(LlmChatMessage(role = "user", content = prompt)),
-                createdAt = System.currentTimeMillis()
-            )
+            // 内部摘要调用不计入用户用量统计（避免污染 Stats）
             result.content.take(48)
         }.getOrElse {
             buildLocalSummary(stableMessages)
