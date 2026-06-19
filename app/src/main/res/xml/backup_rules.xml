@@ -3,4 +3,6 @@
     <include domain="database" path="." />
     <include domain="file" path="datastore/" />
     <include domain="sharedpref" path="." />
+    <!-- API 密钥等敏感设置存于此 DataStore，禁止进入云备份，防止明文密钥泄露 -->
+    <exclude domain="file" path="datastore/iotgpt_settings.preferences_pb" />
 </full-backup-content>
