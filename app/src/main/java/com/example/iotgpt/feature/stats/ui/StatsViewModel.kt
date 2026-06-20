@@ -104,8 +104,6 @@ class StatsViewModel(
             modelUsageDao.observeUsageRecords()
                 .map { records ->
                     ModelUsageAggregate(
-                        byDay = buildUsageByDay(records),
-                        byHour = buildUsageByHour(records),
                         distribution = buildModelUsageDistribution(records),
                         callTrend = buildModelCallTrend(records),
                         promptTokens = records.sumOf { record -> record.promptTokens },
@@ -117,8 +115,6 @@ class StatsViewModel(
                 .collect { aggregate ->
                     _uiState.update {
                         it.copy(
-                            modelUsageByDay = aggregate.byDay,
-                            modelUsageByHour = aggregate.byHour,
                             modelUsageDistribution = aggregate.distribution,
                             modelCallTrend = aggregate.callTrend,
                             totalPromptTokens = aggregate.promptTokens,
@@ -199,28 +195,6 @@ class StatsViewModel(
         }
     }
 
-    private fun buildUsageByDay(records: List<ModelUsageEntity>): List<UsageBucket> {
-        val dayStarts = (DAYS_IN_TREND - 1 downTo 0).map { daysAgo ->
-            startOfDayMillis(daysAgo)
-        }
-        val counts = dayStarts.mapIndexed { index, start ->
-            val end = dayStarts.getOrNull(index + 1) ?: (start + ONE_DAY_MILLIS)
-            records.count { it.createdAt >= start && it.createdAt < end }
-        }
-        return buildBuckets(dayStarts.map { dayFormat().format(Date(it)) }, counts)
-    }
-
-    private fun buildUsageByHour(records: List<ModelUsageEntity>): List<UsageBucket> {
-        val hourStarts = (HOURS_IN_USAGE - 1 downTo 0).map { hoursAgo ->
-            startOfHourMillis(hoursAgo)
-        }
-        val counts = hourStarts.map { start ->
-            val end = start + ONE_HOUR_MILLIS
-            records.count { it.createdAt >= start && it.createdAt < end }
-        }
-        return buildBuckets(hourStarts.map { hourFormat().format(Date(it)) }, counts)
-    }
-
     private fun buildModelUsageDistribution(records: List<ModelUsageEntity>): List<StackedUsageBucket> {
         return buildModelBuckets(records, amountSelector = { it.usageAmount() })
     }
@@ -266,17 +240,6 @@ class StatsViewModel(
         }
     }
 
-    private fun buildBuckets(labels: List<String>, counts: List<Int>): List<UsageBucket> {
-        val max = counts.maxOrNull()?.coerceAtLeast(1) ?: 1
-        return labels.mapIndexed { index, label ->
-            UsageBucket(
-                label = label,
-                count = counts[index],
-                progress = counts[index].toFloat() / max.toFloat()
-            )
-        }
-    }
-
     private fun startOfTodayMillis(): Long = startOfDayMillis(0)
 
     private fun startOfRecentDaysMillis(days: Int): Long = startOfDayMillis(days - 1)
@@ -291,21 +254,10 @@ class StatsViewModel(
         }.timeInMillis
     }
 
-    private fun startOfHourMillis(hoursAgo: Int): Long {
-        return Calendar.getInstance().apply {
-            add(Calendar.HOUR_OF_DAY, -hoursAgo)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }.timeInMillis
-    }
-
     // 纯 epoch 运算截断到整点，避免对每条记录都新建 Calendar；整点偏移时区下与本地结果一致。
     private fun Long.toHourStartMillis(): Long = this - (this % ONE_HOUR_MILLIS)
 
     private fun dayFormat(): SimpleDateFormat = SimpleDateFormat("MM-dd", Locale.getDefault())
-
-    private fun hourFormat(): SimpleDateFormat = SimpleDateFormat("HH:00", Locale.getDefault())
 
     private fun distributionFormat(): SimpleDateFormat = SimpleDateFormat("MM-dd HH:00", Locale.getDefault())
 
@@ -314,8 +266,6 @@ class StatsViewModel(
     }
 
     private data class ModelUsageAggregate(
-        val byDay: List<UsageBucket>,
-        val byHour: List<UsageBucket>,
         val distribution: List<StackedUsageBucket>,
         val callTrend: List<StackedUsageBucket>,
         val promptTokens: Int,
@@ -325,7 +275,6 @@ class StatsViewModel(
 
     private companion object {
         const val DAYS_IN_TREND = 7
-        const val HOURS_IN_USAGE = 12
         const val HOURS_IN_DISTRIBUTION = 10
         const val MAX_MODELS_IN_CHART = 5
         const val ONE_DAY_MILLIS = 24L * 60L * 60L * 1000L
@@ -356,8 +305,6 @@ data class StatsUiState(
     val lastApiError: String? = null,
     val modelUsage: List<ModelUsageSummary> = emptyList(),
     val messageTrend: List<DailyMessageCount> = emptyList(),
-    val modelUsageByDay: List<UsageBucket> = emptyList(),
-    val modelUsageByHour: List<UsageBucket> = emptyList(),
     val modelUsageDistribution: List<StackedUsageBucket> = emptyList(),
     val modelCallTrend: List<StackedUsageBucket> = emptyList(),
     val networkStatus: NetworkStatus = NetworkStatus(false, "检测中")
@@ -371,12 +318,6 @@ data class StatsUiState(
 }
 
 data class DailyMessageCount(
-    val label: String,
-    val count: Int,
-    val progress: Float
-)
-
-data class UsageBucket(
     val label: String,
     val count: Int,
     val progress: Float

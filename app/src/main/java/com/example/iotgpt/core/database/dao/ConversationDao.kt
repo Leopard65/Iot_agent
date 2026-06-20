@@ -1,7 +1,6 @@
 package com.example.iotgpt.core.database.dao
 
 import androidx.room.Dao
-import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
@@ -21,9 +20,6 @@ interface ConversationDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertConversation(conversation: ConversationEntity)
-
-    @Delete
-    suspend fun deleteConversation(conversation: ConversationEntity)
 
     @Query("DELETE FROM conversations WHERE id = :id")
     suspend fun deleteConversationById(id: String)
