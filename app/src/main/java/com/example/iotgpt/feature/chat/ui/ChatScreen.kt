@@ -49,6 +49,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -932,10 +933,12 @@ fun ChatScreen(
                         )
                     }
                 } else {
-                    items(
-                        items = visibleMessages.asReversed(),
-                        key = { it.id }
-                    ) { message ->
+                    val reversedMessages = visibleMessages.asReversed()
+                    itemsIndexed(
+                        items = reversedMessages,
+                        key = { _, item -> item.id }
+                    ) { index, message ->
+                        val showHeader = reversedMessages.getOrNull(index + 1)?.role != message.role
                         Box(
                             modifier = if (reduceMotion) {
                                 Modifier.fillMaxWidth()
@@ -947,6 +950,7 @@ fun ChatScreen(
                         ) {
                             MessageBubble(
                                 message = message,
+                                showHeader = showHeader,
                                 modelLabel = uiState.activeModelProfile?.model ?: "模型",
                                 reduceMotion = reduceMotion,
                                 onCopy = { text ->
@@ -2384,6 +2388,7 @@ private fun PromptDeckItem(
 @Composable
 private fun MessageBubble(
     message: MessageEntity,
+    showHeader: Boolean,
     modelLabel: String,
     reduceMotion: Boolean,
     onCopy: (String) -> Unit,
@@ -2437,25 +2442,28 @@ private fun MessageBubble(
                 .heightIn(min = 36.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = labelText,
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = labelColor,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = formatTime(message.createdAt),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = labelColor.copy(alpha = 0.64f)
-                )
+            val displayHeader = showHeader || message.isStreaming || canRetry || isClaw
+            if (displayHeader) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = labelText,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = labelColor,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = formatTime(message.createdAt),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = labelColor.copy(alpha = 0.64f)
+                    )
+                }
             }
             FileUtils.parseAttachmentJson(message.attachmentJson)?.let { attachment ->
                 AttachmentCard(attachment)
