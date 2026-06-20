@@ -1,5 +1,11 @@
 package com.example.iotgpt.navigation
 
+import android.view.HapticFeedbackConstants
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
@@ -27,6 +33,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -40,6 +47,8 @@ import com.example.iotgpt.feature.stats.ui.StatsScreen
 import com.example.iotgpt.feature.welcome.ui.LaunchWelcomeScreen
 import com.example.iotgpt.feature.welcome.ui.WelcomeScreen
 import com.example.iotgpt.core.preferences.SettingsStore
+import com.example.iotgpt.ui.theme.LotMotion
+import com.example.iotgpt.ui.theme.rememberReduceMotion
 import kotlinx.coroutines.launch
 
 /**
@@ -73,6 +82,8 @@ fun AppNavigation() {
         return
     }
 
+    val view = LocalView.current
+    val reduceMotion = rememberReduceMotion()
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route ?: MainRoute.Chat.route
@@ -89,6 +100,7 @@ fun AppNavigation() {
                         selected = selected,
                         onClick = {
                             if (!selected) {
+                                view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
                                 navController.navigate(destination.route) {
                                     popUpTo(navController.graph.findStartDestination().id) {
                                         saveState = true
@@ -116,7 +128,9 @@ fun AppNavigation() {
         NavHost(
             navController = navController,
             startDestination = MainRoute.Chat.route,
-            modifier = Modifier.padding(innerPadding)
+            modifier = Modifier.padding(innerPadding),
+            enterTransition = { if (reduceMotion) EnterTransition.None else fadeIn(tween(LotMotion.normal)) },
+            exitTransition = { if (reduceMotion) ExitTransition.None else fadeOut(tween(LotMotion.normal)) }
         ) {
             composable(MainRoute.Chat.route) {
                 ChatScreen()
