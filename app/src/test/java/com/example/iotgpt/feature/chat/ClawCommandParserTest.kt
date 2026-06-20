@@ -73,6 +73,13 @@ class ClawCommandParserTest {
     }
 
     @Test
+    fun parsesPhoneNavigationAndInstallAsAppLeap() {
+        assertEquals(ClawCommand.AppLeap("拨打 13800138000"), parseClawCommand("拨打 13800138000"))
+        assertEquals(ClawCommand.AppLeap("导航到 北京邮电大学"), parseClawCommand("导航到 北京邮电大学"))
+        assertEquals(ClawCommand.AppLeap("安装 微信"), parseClawCommand("安装 微信"))
+    }
+
+    @Test
     fun parsesUnknownCommand() {
         assertEquals(ClawCommand.Unknown, parseClawCommand("今天天气怎么样"))
     }

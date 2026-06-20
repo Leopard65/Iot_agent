@@ -37,8 +37,13 @@ fun parseClawCommand(text: String): ClawCommand {
             ClawCommand.Sms(phoneNumber, content)
         }
         url != null -> ClawCommand.AppLeap(url)
-        listOf("搜索", "search", "浏览器", "browser", "打开", "open", "应用", "app", "wifi", "wi-fi", "蓝牙", "设置")
-            .any { lower.contains(it) } -> ClawCommand.AppLeap(normalized)
+        listOf(
+            "搜索", "search", "浏览器", "browser", "打开", "open", "应用", "app",
+            "wifi", "wi-fi", "无线", "蓝牙", "bluetooth", "设置",
+            "拨打", "打电话", "拨号", "call",
+            "导航", "navigate",
+            "安装", "应用市场", "应用商店", "market", "store"
+        ).any { lower.contains(it) } -> ClawCommand.AppLeap(normalized)
         else -> ClawCommand.Unknown
     }
 }
