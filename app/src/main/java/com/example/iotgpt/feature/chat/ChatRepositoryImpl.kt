@@ -287,10 +287,10 @@ class ChatRepositoryImpl(
     ): MessageEntity {
         val now = System.currentTimeMillis()
         val messages = messageDao.getMessages(conversationId)
-        val requestMessages = messages
+        val eligibleMessages = messages
             .filter { (it.role == "user" || it.role == "assistant") && !it.isStreaming }
             .filter { it.content.isNotBlank() }
-            .takeLast(MAX_CONTEXT_MESSAGES)
+        val requestMessages = selectContextWindow(eligibleMessages)
             .map { it.toLlmChatMessage(settings) }
 
         val streamedContent = StringBuilder()
@@ -508,6 +508,24 @@ class ChatRepositoryImpl(
             .ifBlank { "本地会话" }
     }
 
+    /**
+     * Picks the most recent eligible messages that fit within the token budget, walking from
+     * newest to oldest. Always keeps at least one message and never exceeds the hard message cap;
+     * prefers each message's persisted tokenCount, falling back to a length-based estimate.
+     */
+    private fun selectContextWindow(eligible: List<MessageEntity>): List<MessageEntity> {
+        val selected = ArrayList<MessageEntity>()
+        var usedTokens = 0
+        for (message in eligible.asReversed()) {
+            if (selected.size >= MAX_CONTEXT_MESSAGES) break
+            val tokens = message.tokenCount ?: estimateTokenCount(message.content)
+            if (selected.isNotEmpty() && usedTokens + tokens > MAX_CONTEXT_TOKENS) break
+            usedTokens += tokens
+            selected.add(message)
+        }
+        return selected.asReversed()
+    }
+
     private fun estimateTokenCount(content: String): Int {
         return (content.length / 2).coerceAtLeast(1)
     }
@@ -588,7 +606,8 @@ class ChatRepositoryImpl(
     }
 
     private companion object {
-        const val MAX_CONTEXT_MESSAGES = 20
+        const val MAX_CONTEXT_MESSAGES = 40
+        const val MAX_CONTEXT_TOKENS = 3000
         const val MAX_SUMMARY_MESSAGES = 12
         const val STREAM_UPDATE_INTERVAL_MS = 48L
     }
