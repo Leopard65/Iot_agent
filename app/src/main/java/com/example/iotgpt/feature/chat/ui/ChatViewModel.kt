@@ -266,7 +266,7 @@ class ChatViewModel(
                 resultHint?.takeIf { it.isNotBlank() }?.let { hint ->
                     repository.addLocalMessage(
                         conversationId = conversationId,
-                        role = "system",
+                        role = "claw",
                         content = hint
                     )
                 }
@@ -289,7 +289,7 @@ class ChatViewModel(
             runCatching {
                 repository.addLocalMessage(
                     conversationId = _uiState.value.currentConversationId,
-                    role = "system",
+                    role = "claw",
                     content = content,
                     attachmentJson = attachmentJson
                 )
@@ -322,7 +322,7 @@ class ChatViewModel(
                 )
                 repository.addLocalMessage(
                     conversationId = conversationId,
-                    role = "system",
+                    role = "claw",
                     content = resultContent,
                     attachmentJson = attachmentJson
                 )

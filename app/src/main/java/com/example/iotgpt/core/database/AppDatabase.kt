@@ -25,7 +25,7 @@ import com.example.iotgpt.core.database.entity.ModelUsageEntity
         ModelUsageEntity::class,
         AgentTaskEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -50,7 +50,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .build()
                     .also { instance = it }
             }
@@ -59,6 +59,13 @@ abstract class AppDatabase : RoomDatabase() {
         private val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE model_usages ADD COLUMN isEstimated INTEGER NOT NULL DEFAULT 1")
+            }
+        }
+
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Claw local messages used to reuse role = "system"; give them a dedicated role.
+                db.execSQL("UPDATE messages SET role = 'claw' WHERE role = 'system'")
             }
         }
     }

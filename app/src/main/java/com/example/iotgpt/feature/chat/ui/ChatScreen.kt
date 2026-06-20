@@ -2395,7 +2395,7 @@ private fun MessageBubble(
     onRetry: (String) -> Unit
 ) {
     val isUser = message.role == "user"
-    val isClaw = message.role == "system"
+    val isClaw = message.role == "claw"
     val canRetry = !isUser &&
         !isClaw &&
         !message.isStreaming &&
