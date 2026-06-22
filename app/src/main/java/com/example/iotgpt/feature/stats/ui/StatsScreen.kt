@@ -262,11 +262,7 @@ private fun ChartInsightCard(insight: ChartInsight, onDismiss: () -> Unit) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.width(22.dp)
                     )
-                    Canvas(
-                        modifier = Modifier
-                            .size(10.dp)
-                            .semantics { contentDescription = "${row.label} 色标" }
-                    ) {
+                    Canvas(modifier = Modifier.size(10.dp)) {
                         drawCircle(color = row.color)
                     }
                     Text(
@@ -820,8 +816,7 @@ private fun EmptyChartState() {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .height(180.dp)
-            .semantics { contentDescription = "暂无模型调用记录，完成一次对话后这里会显示图表" },
+            .height(180.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -896,11 +891,7 @@ private fun LegendValueRow(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.width(22.dp)
         )
-        Canvas(
-            modifier = Modifier
-                .size(10.dp)
-                .semantics { contentDescription = "$label 色标" }
-        ) {
+        Canvas(modifier = Modifier.size(10.dp)) {
             drawCircle(color = color)
         }
         Text(
@@ -933,11 +924,7 @@ private fun LegendItem(
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Canvas(
-            modifier = Modifier
-                .size(10.dp)
-                .semantics { contentDescription = "$label 色标" }
-        ) {
+        Canvas(modifier = Modifier.size(10.dp)) {
             drawRect(color = color)
         }
         Text(

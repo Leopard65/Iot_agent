@@ -50,7 +50,6 @@ class ChatViewModel(
         observeCurrentMessages()
         observeModelProfiles()
         observeClawCommandLogs()
-        observePagination()
     }
 
     fun createConversation() {
@@ -76,9 +75,6 @@ class ChatViewModel(
                 currentConversationId = id,
                 errorMessage = null
             )
-        }
-        viewModelScope.launch {
-            repository.resetMessagePagination()
         }
     }
 
@@ -114,38 +110,6 @@ class ChatViewModel(
                     _uiState.update { it.copy(errorMessage = error.readableMessage()) }
                 }
         }
-    }
-
-    fun exportCurrentConversation() {
-        val conversationId = _uiState.value.currentConversationId ?: return
-        viewModelScope.launch {
-            _uiState.update { it.copy(isExporting = true, errorMessage = null) }
-            runCatching {
-                repository.exportConversationMarkdown(conversationId)
-            }.onSuccess { export ->
-                _uiState.update {
-                    it.copy(
-                        isExporting = false,
-                        pendingExport = ChatExportUiState(
-                            fileName = export.fileName,
-                            markdown = export.markdown
-                        ),
-                        noticeMessage = "对话导出已生成"
-                    )
-                }
-            }.onFailure { error ->
-                _uiState.update {
-                    it.copy(
-                        isExporting = false,
-                        errorMessage = error.readableMessage()
-                    )
-                }
-            }
-        }
-    }
-
-    fun consumePendingExport() {
-        _uiState.update { it.copy(pendingExport = null) }
     }
 
     fun sendMessage(content: String) {
@@ -273,13 +237,6 @@ class ChatViewModel(
                     noticeMessage = "已中断本次 AI 回复"
                 )
             }
-        }
-    }
-
-    fun loadOlderMessages() {
-        val conversationId = _uiState.value.currentConversationId ?: return
-        viewModelScope.launch {
-            repository.loadOlderMessages(conversationId)
         }
     }
 
@@ -516,24 +473,6 @@ class ChatViewModel(
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    private fun observePagination() {
-        viewModelScope.launch {
-            repository.visibleMessageLimit.collect { limit ->
-                _uiState.update { it.copy(visibleMessageLimit = limit) }
-            }
-        }
-        viewModelScope.launch {
-            uiState
-                .map { it.currentConversationId }
-                .distinctUntilChanged()
-                .flatMapLatest { repository.observeMessageCount(it) }
-                .collect { count ->
-                    _uiState.update { it.copy(totalMessageCount = count) }
-                }
-        }
-    }
-
-    @OptIn(ExperimentalCoroutinesApi::class)
     private fun observeCurrentMessages() {
         viewModelScope.launch {
             uiState
@@ -561,19 +500,8 @@ data class ChatUiState(
     val isClawMode: Boolean = false,
     val isSaving: Boolean = false,
     val errorMessage: String? = null,
-    val noticeMessage: String? = null,
-    val visibleMessageLimit: Int = 50,
-    val totalMessageCount: Int = 0,
-    val isExporting: Boolean = false,
-    val pendingExport: ChatExportUiState? = null
+    val noticeMessage: String? = null
 ) {
     val currentConversation: ConversationEntity?
         get() = conversations.firstOrNull { it.id == currentConversationId }
-    val hasOlderMessages: Boolean
-        get() = totalMessageCount > visibleMessageLimit
 }
-
-data class ChatExportUiState(
-    val fileName: String,
-    val markdown: String
-)

@@ -29,7 +29,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -367,15 +366,6 @@ private fun ProfileEditorDialog(
     onSave: () -> Unit,
     onTest: () -> Unit
 ) {
-    val baseUrlError = remember(uiState.baseUrl) {
-        val trimmed = uiState.baseUrl.trim()
-        if (trimmed.isBlank()) null
-        else if (!trimmed.startsWith("http://", ignoreCase = true) &&
-            !trimmed.startsWith("https://", ignoreCase = true)
-        ) "Base URL 应以 http:// 或 https:// 开头"
-        else null
-    }
-
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -391,18 +381,9 @@ private fun ProfileEditorDialog(
                     .widthIn(max = 520.dp)
                     .heightIn(max = 560.dp)
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // ── 预置模型 ──────────────────────────────────────────────
                 ModelPresetSection(uiState = uiState, onApplyPreset = onApplyPreset)
-
-                // ── 基础配置 ──────────────────────────────────────────────
-                Text(
-                    text = "基础配置",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary
-                )
                 OutlinedTextField(
                     value = uiState.profileName,
                     onValueChange = onProfileNameChanged,
@@ -418,8 +399,7 @@ private fun ProfileEditorDialog(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     textStyle = MaterialTheme.typography.bodySmall,
-                    label = { Text("服务商") },
-                    placeholder = { Text("留空时自动推断") }
+                    label = { Text("服务商") }
                 )
                 OutlinedTextField(
                     value = uiState.baseUrl,
@@ -428,9 +408,7 @@ private fun ProfileEditorDialog(
                     singleLine = true,
                     textStyle = MaterialTheme.typography.bodySmall,
                     label = { Text("Base URL") },
-                    placeholder = { Text("https://api.deepseek.com") },
-                    isError = baseUrlError != null,
-                    supportingText = baseUrlError?.let { { Text(it) } }
+                    placeholder = { Text("https://api.deepseek.com") }
                 )
                 OutlinedTextField(
                     value = uiState.apiKey,
@@ -439,7 +417,7 @@ private fun ProfileEditorDialog(
                     singleLine = true,
                     textStyle = MaterialTheme.typography.bodySmall,
                     label = { Text("API Key") },
-                    placeholder = { Text("sk-... 或对应服务的密钥") },
+                    placeholder = { Text("输入后仅在本机保存") },
                     visualTransformation = if (showApiKey) {
                         VisualTransformation.None
                     } else {
@@ -451,28 +429,13 @@ private fun ProfileEditorDialog(
                         }
                     }
                 )
-                Text(
-                    text = "API Key 使用 Android Keystore 加密保存在本机，调试导出不会包含明文。",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
                 OutlinedTextField(
                     value = uiState.model,
                     onValueChange = onModelChanged,
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     textStyle = MaterialTheme.typography.bodySmall,
-                    label = { Text("模型名称") },
-                    placeholder = { Text("例如 deepseek-chat") }
-                )
-
-                // ── 能力与高级 ────────────────────────────────────────────
-                HorizontalDivider()
-                Text(
-                    text = "能力与高级",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary
+                    label = { Text("模型名称") }
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -589,7 +552,7 @@ private fun ProfileEditorDialog(
         },
         confirmButton = {
             Button(
-                enabled = !uiState.isSaving && baseUrlError == null,
+                enabled = !uiState.isSaving,
                 onClick = onSave
             ) {
                 Text(if (uiState.isSaving) "保存中" else "保存")

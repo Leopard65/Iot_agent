@@ -8,14 +8,11 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
-import androidx.lifecycle.lifecycleScope
 import com.example.iotgpt.core.notification.NotificationHelper
 import com.example.iotgpt.core.preferences.SettingsStore
 import com.example.iotgpt.core.preferences.ThemeMode
 import com.example.iotgpt.navigation.AppNavigation
 import com.example.iotgpt.ui.theme.LotTheme
-import kotlinx.coroutines.launch
 
 /**
  * App host Activity. It owns the Compose entry point and delegates app screens
@@ -23,12 +20,8 @@ import kotlinx.coroutines.launch
  */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
-        installSplashScreen()
         super.onCreate(savedInstanceState)
         NotificationHelper(this).ensureChannels()
-        lifecycleScope.launch {
-            SettingsStore(applicationContext).ensureKeyMigration()
-        }
         enableEdgeToEdge()
         setContent {
             val settingsStore = remember { SettingsStore(applicationContext) }

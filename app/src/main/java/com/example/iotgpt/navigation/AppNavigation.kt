@@ -18,8 +18,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -41,6 +44,7 @@ import androidx.navigation.compose.rememberNavController
 import com.example.iotgpt.feature.chat.ui.ChatScreen
 import com.example.iotgpt.feature.settings.ui.SettingsScreen
 import com.example.iotgpt.feature.stats.ui.StatsScreen
+import com.example.iotgpt.feature.welcome.ui.LaunchWelcomeScreen
 import com.example.iotgpt.feature.welcome.ui.WelcomeScreen
 import com.example.iotgpt.core.preferences.SettingsStore
 import com.example.iotgpt.ui.theme.LotMotion
@@ -56,6 +60,16 @@ fun AppNavigation() {
     val settingsStore = remember { SettingsStore(context.applicationContext) }
     val onboardingCompleted by settingsStore.onboardingCompleted.collectAsState(initial = false)
     val scope = rememberCoroutineScope()
+    var showLaunchWelcome by rememberSaveable { mutableStateOf(true) }
+
+    if (showLaunchWelcome) {
+        LaunchWelcomeScreen(
+            onFinished = {
+                showLaunchWelcome = false
+            }
+        )
+        return
+    }
 
     if (!onboardingCompleted) {
         WelcomeScreen(

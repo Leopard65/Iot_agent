@@ -2,7 +2,7 @@
 
 lot 是一个面向普通用户的 Android AI 智能助手。项目使用 Kotlin、Jetpack Compose、Room、DataStore、OkHttp 和 WorkManager 实现，支持 OpenAI 兼容大模型接口、本地会话保存、多模态附件、统计监测、通知和 Claw 本地智能体任务。
 
-项目对应的大作业题目为“AI物联网专业智能助手APP”。物联网是作业题目背景，不是 App 的产品边界；当前 App 对外定位为通用 AI 智能助手。原始评分要求已整理在 `原始大作业要求.md`。
+项目对应的大作业题目为“AI物联网专业智能助手APP”。物联网是作业题目背景，不是 App 的产品边界；当前 App 对外定位为通用 AI 智能助手。原始评分要求已整理在 `原始大作业要求.md`；`AIoT_App_完整版开发提示词.md` 是开发过程中由其他 AI 工具扩写出的参考提示，不作为原始需求来源。
 
 下一阶段 UI/UX 美化建议见 `UI_UX_下一阶段设计审读.md`。
 
@@ -10,14 +10,14 @@ lot 是一个面向普通用户的 Android AI 智能助手。项目使用 Kotlin
 
 - 产品定位已收口为“通用 AI 智能助手”，物联网仅作为作业题目背景，不作为 App 产品边界。
 - 底层 system prompt、欢迎页、聊天空状态、统计洞察、设置页版本标识和文档说明均已去除物联网专用定位。
-- 新增 `LotDesignTokens.kt`，并将聊天、统计、设置等页面逐步迁移到统一 spacing、radius、motion 和语义色。
+- 新增 `LotDesignTokens.kt`，并将聊天、统计、设置、智能体等页面逐步迁移到统一 spacing、radius、motion 和语义色。
 - 聊天页已加入通用 Prompt Deck、多行输入 Composer、AI/Claw 模式控制、能力条和 DeepSeek 风格历史抽屉分组。
-- `Claw` 已收敛为聊天页内的本地模式开关，并通过历史抽屉与统计页展示任务日志。
-- 已通过 `assembleDebug`、`assembleRelease`、`testDebugUnitTest` 和 `connectedDebugAndroidTest`，模拟器 `Medium_Phone(AVD) - 12` 上 44 个仪器化测试通过。
+- `Claw` 已作为“智能体”顶层 Tab 接入底部导航，并新增本地能力面板。
+- 已通过 `assembleDebug`、`testDebugUnitTest` 和 `connectedDebugAndroidTest`，模拟器 `Medium_Phone(AVD) - 12` 上 17 个仪器化测试通过。
 
 ## 功能概览
 
-- 启动与 Onboarding：冷启动使用 Android SplashScreen API，首次启动进入 3 页功能引导。
+- 启动欢迎页与 Onboarding：每次启动先展示短时 lot 欢迎页，首次启动再进入 3 页功能引导。
 - AI 聊天：支持多轮会话、历史会话抽屉、新建/切换/删除会话。
 - 流式输出：聊天页使用 OpenAI 兼容 SSE 分片更新回复，边生成边写入本地会话。
 - 聊天体验增强：支持消息复制、失败回复重试、最后一条用户问题重新生成、代码块可读展示和空状态示例问题。
@@ -65,9 +65,9 @@ app/src/main/java/com/example/iotgpt
     └── settings/            # API、主题、维护设置
 ```
 
-## 启动与引导
+## 启动欢迎页
 
-App 冷启动使用 Android SplashScreen API，避免固定延时阻塞主流程。首次启动时继续展示 3 页 Welcome/Onboarding，用于说明 AI 对话、多模态采集、统计监测和模型配置能力。
+App 启动时会先展示一个约 1.8 秒的额外欢迎页，用 Canvas 绘制拓扑线条、微光节点和 AI 标识，风格参考“数字孪生与多维线条 / 微光破晓”的专业克制方向。它负责建立第一印象；原来的 3 页 Welcome/Onboarding 仍只在首次启动时展示，用于功能引导。
 
 ## 运行方式
 
