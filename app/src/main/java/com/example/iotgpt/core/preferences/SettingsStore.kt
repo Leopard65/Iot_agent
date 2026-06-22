@@ -25,7 +25,8 @@ private val Context.settingsDataStore by preferencesDataStore(name = "iotgpt_set
  */
 class SettingsStore(
     context: Context,
-    private val dataStore: DataStore<Preferences> = context.settingsDataStore
+    internal val dataStore: DataStore<Preferences> = context.settingsDataStore,
+    internal val encryption: ApiKeyEncryption = ApiKeyEncryption(context)
 ) {
     val modelProfiles: Flow<List<ModelProfile>> = dataStore.data.map { preferences ->
         readProfiles(preferences)
@@ -76,10 +77,11 @@ class SettingsStore(
                     profile
                 }
             }
-            writeProfiles(preferences, updatedProfiles)
+            writeProfiles(preferences, updatedProfiles, encryption)
             preferences[ACTIVE_MODEL_PROFILE_ID] = activeId
             preferences[BASE_URL] = settings.baseUrl.trim()
-            preferences[API_KEY] = settings.apiKey.trim()
+            preferences[API_KEY] = encryption.encryptApiKey(settings.apiKey.trim())
+                ?: settings.apiKey.trim()
             preferences[MODEL] = settings.model.trim()
         }
     }
@@ -95,7 +97,7 @@ class SettingsStore(
             } else {
                 currentProfiles + normalized
             }
-            writeProfiles(preferences, updatedProfiles)
+            writeProfiles(preferences, updatedProfiles, encryption)
 
             val activeId = if (activate) {
                 normalized.id
@@ -105,7 +107,7 @@ class SettingsStore(
             }
             preferences[ACTIVE_MODEL_PROFILE_ID] = activeId
             updatedProfiles.firstOrNull { it.id == activeId }
-                ?.writeLegacyPreferences(preferences)
+                ?.writeLegacyPreferences(preferences, encryption)
         }
     }
 
@@ -114,7 +116,7 @@ class SettingsStore(
             val profiles = readProfiles(preferences)
             val activeProfile = profiles.firstOrNull { it.id == profileId } ?: return@edit
             preferences[ACTIVE_MODEL_PROFILE_ID] = activeProfile.id
-            activeProfile.writeLegacyPreferences(preferences)
+            activeProfile.writeLegacyPreferences(preferences, encryption)
         }
     }
 
@@ -132,10 +134,10 @@ class SettingsStore(
                     profile
                 }
             }
-            writeProfiles(preferences, updatedProfiles)
+            writeProfiles(preferences, updatedProfiles, encryption)
             preferences[ACTIVE_MODEL_PROFILE_ID] = activeId
             updatedProfiles.firstOrNull { it.id == activeId }
-                ?.writeLegacyPreferences(preferences)
+                ?.writeLegacyPreferences(preferences, encryption)
         }
     }
 
@@ -151,10 +153,10 @@ class SettingsStore(
                     profile
                 }
             }
-            writeProfiles(preferences, updatedProfiles)
+            writeProfiles(preferences, updatedProfiles, encryption)
             preferences[ACTIVE_MODEL_PROFILE_ID] = activeId
             updatedProfiles.firstOrNull { it.id == activeId }
-                ?.writeLegacyPreferences(preferences)
+                ?.writeLegacyPreferences(preferences, encryption)
         }
     }
 
@@ -166,9 +168,9 @@ class SettingsStore(
             if (profileId == activeId || profiles.size <= 1) return@edit
 
             val updatedProfiles = profiles.filterNot { it.id == profileId }
-            writeProfiles(preferences, updatedProfiles)
+            writeProfiles(preferences, updatedProfiles, encryption)
             updatedProfiles.firstOrNull { it.id == activeId }
-                ?.writeLegacyPreferences(preferences)
+                ?.writeLegacyPreferences(preferences, encryption)
         }
     }
 
@@ -192,6 +194,102 @@ class SettingsStore(
                 preferences[LAST_API_ERROR] = message.take(MAX_ERROR_CHARS)
             }
         }
+    }
+
+    /**
+     * Re-encrypts any plaintext API keys found in stored profiles.
+     * Reads the raw MODEL_PROFILES JSON directly to avoid decrypting
+     * already-encrypted keys through [readProfiles], which would cause
+     * double-encryption on repeated calls.
+     */
+    suspend fun ensureKeyMigration() {
+        dataStore.edit { preferences ->
+            // ── Migrate MODEL_PROFILES raw JSON ──────────────────────────
+            val raw = preferences[MODEL_PROFILES].orEmpty()
+            if (raw.isNotBlank()) {
+                runCatching {
+                    val array = JSONArray(raw)
+                    var changed = false
+                    for (i in 0 until array.length()) {
+                        val obj = array.optJSONObject(i) ?: continue
+                        val rawKey = obj.optString("apiKey", "")
+                        if (rawKey.isNotBlank() && !encryption.isLikelyEncrypted(rawKey)) {
+                            val encrypted = encryption.encryptApiKey(rawKey)
+                            if (encrypted != null) {
+                                obj.put("apiKey", encrypted)
+                                changed = true
+                            } else {
+                                android.util.Log.w(
+                                    "SettingsStore",
+                                    "Failed to encrypt apiKey in profile ${obj.optString("id")}; keeping plaintext"
+                                )
+                            }
+                        }
+                    }
+                    if (changed) {
+                        preferences[MODEL_PROFILES] = array.toString()
+                    }
+                }
+            }
+
+            // ── Migrate legacy standalone API_KEY ────────────────────────
+            val legacyKey = preferences[API_KEY].orEmpty()
+            if (legacyKey.isNotBlank() && !encryption.isLikelyEncrypted(legacyKey)) {
+                val encrypted = encryption.encryptApiKey(legacyKey)
+                if (encrypted != null) {
+                    preferences[API_KEY] = encrypted
+                } else {
+                    android.util.Log.w(
+                        "SettingsStore",
+                        "Failed to encrypt legacy API_KEY during migration; keeping plaintext"
+                    )
+                }
+            }
+        }
+    }
+
+    private fun readProfiles(preferences: Preferences): List<ModelProfile> {
+        val raw = preferences[MODEL_PROFILES].orEmpty()
+        val parsed = runCatching {
+            val array = JSONArray(raw)
+            buildList {
+                for (index in 0 until array.length()) {
+                    val item = array.optJSONObject(index) ?: continue
+                    val rawApiKey = item.optString("apiKey", "")
+                    val decryptedKey = when {
+                        rawApiKey.isBlank() -> ""
+                        encryption.isLikelyEncrypted(rawApiKey) ->
+                            encryption.decryptApiKey(rawApiKey) ?: ""
+                        else -> rawApiKey
+                    }
+                    add(
+                        ModelProfile(
+                            id = item.optString("id"),
+                            name = item.optString("name"),
+                            provider = item.optString("provider"),
+                            baseUrl = item.optString("baseUrl"),
+                            apiKey = decryptedKey,
+                            model = item.optString("model"),
+                            supportsVision = item.optBoolean("supportsVision", false),
+                            supportsReasoning = item.optBoolean("supportsReasoning", false),
+                            reasoningEnabled = item.optBoolean("reasoningEnabled", false),
+                            supportsAudioTranscription = item.optBoolean(
+                                "supportsAudioTranscription",
+                                false
+                            ),
+                            transcriptionModel = item.optString(
+                                "transcriptionModel",
+                                DEFAULT_TRANSCRIPTION_MODEL
+                            )
+                        ).normalized()
+                    )
+                }
+            }.filter { it.id.isNotBlank() }
+        }.getOrDefault(emptyList())
+
+        return parsed
+            .filterNot { it.isUnusedBuiltInPreset() }
+            .ifEmpty { defaultProfiles(preferences, encryption) }
     }
 
     companion object {
@@ -220,53 +318,25 @@ class SettingsStore(
             )
         }
 
-        private fun readProfiles(preferences: Preferences): List<ModelProfile> {
-            val raw = preferences[MODEL_PROFILES].orEmpty()
-            val parsed = runCatching {
-                val array = JSONArray(raw)
-                buildList {
-                    for (index in 0 until array.length()) {
-                        val item = array.optJSONObject(index) ?: continue
-                        add(
-                            ModelProfile(
-                                id = item.optString("id"),
-                                name = item.optString("name"),
-                                provider = item.optString("provider"),
-                                baseUrl = item.optString("baseUrl"),
-                                apiKey = item.optString("apiKey"),
-                                model = item.optString("model"),
-                                supportsVision = item.optBoolean("supportsVision", false),
-                                supportsReasoning = item.optBoolean("supportsReasoning", false),
-                                reasoningEnabled = item.optBoolean("reasoningEnabled", false),
-                                supportsAudioTranscription = item.optBoolean(
-                                    "supportsAudioTranscription",
-                                    false
-                                ),
-                                transcriptionModel = item.optString(
-                                    "transcriptionModel",
-                                    DEFAULT_TRANSCRIPTION_MODEL
-                                )
-                            ).normalized()
-                        )
-                    }
-                }.filter { it.id.isNotBlank() }
-            }.getOrDefault(emptyList())
-
-            return parsed
-                .filterNot { it.isUnusedBuiltInPreset() }
-                .ifEmpty { defaultProfiles(preferences) }
-        }
-
-        private fun writeProfiles(preferences: MutablePreferences, profiles: List<ModelProfile>) {
+        private fun writeProfiles(
+            preferences: MutablePreferences,
+            profiles: List<ModelProfile>,
+            encryption: ApiKeyEncryption
+        ) {
             val array = JSONArray()
             profiles.map { it.normalized() }.forEach { profile ->
+                val storedKey = if (encryption.isLikelyEncrypted(profile.apiKey)) {
+                    profile.apiKey
+                } else {
+                    encryption.encryptApiKey(profile.apiKey) ?: profile.apiKey
+                }
                 array.put(
                     JSONObject()
                         .put("id", profile.id)
                         .put("name", profile.name)
                         .put("provider", profile.provider)
                         .put("baseUrl", profile.baseUrl)
-                        .put("apiKey", profile.apiKey)
+                        .put("apiKey", storedKey)
                         .put("model", profile.model)
                         .put("supportsVision", profile.supportsVision)
                         .put("supportsReasoning", profile.supportsReasoning)
@@ -278,13 +348,22 @@ class SettingsStore(
             preferences[MODEL_PROFILES] = array.toString()
         }
 
-        private fun defaultProfiles(preferences: Preferences): List<ModelProfile> {
+        private fun defaultProfiles(
+            preferences: Preferences,
+            encryption: ApiKeyEncryption
+        ): List<ModelProfile> {
+            val legacyApiKeyRaw = preferences[API_KEY].orEmpty()
+            val legacyApiKey = if (encryption.isLikelyEncrypted(legacyApiKeyRaw)) {
+                encryption.decryptApiKey(legacyApiKeyRaw) ?: ""
+            } else {
+                legacyApiKeyRaw
+            }
             val legacy = ModelProfile(
                 id = inferLegacyProfileId(preferences),
                 name = inferLegacyName(preferences),
                 provider = inferLegacyProvider(preferences),
                 baseUrl = preferences[BASE_URL] ?: DEFAULT_BASE_URL,
-                apiKey = preferences[API_KEY].orEmpty(),
+                apiKey = legacyApiKey,
                 model = preferences[MODEL] ?: DEFAULT_MODEL,
                 supportsVision = false,
                 supportsReasoning = inferLegacySupportsReasoning(preferences),
@@ -424,9 +503,17 @@ data class ModelProfile(
     }
 }
 
-private fun ModelProfile.writeLegacyPreferences(preferences: MutablePreferences) {
+private fun ModelProfile.writeLegacyPreferences(
+    preferences: MutablePreferences,
+    encryption: ApiKeyEncryption
+) {
     preferences[SettingsStoreLegacyKeys.BASE_URL] = baseUrl
-    preferences[SettingsStoreLegacyKeys.API_KEY] = apiKey
+    val storedKey = if (encryption.isLikelyEncrypted(apiKey)) {
+        apiKey
+    } else {
+        encryption.encryptApiKey(apiKey) ?: apiKey
+    }
+    preferences[SettingsStoreLegacyKeys.API_KEY] = storedKey
     preferences[SettingsStoreLegacyKeys.MODEL] = model
 }
 

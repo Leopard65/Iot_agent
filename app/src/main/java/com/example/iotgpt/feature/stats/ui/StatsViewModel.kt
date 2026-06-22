@@ -5,8 +5,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.core.net.toUri
 import com.example.iotgpt.core.database.AppDatabase
+import com.example.iotgpt.core.database.dao.HourlyModelUsage
 import com.example.iotgpt.core.database.dao.ModelUsageSummary
-import com.example.iotgpt.core.database.entity.ModelUsageEntity
 import com.example.iotgpt.core.network.NetworkMonitor
 import com.example.iotgpt.core.network.NetworkStatus
 import com.example.iotgpt.core.preferences.SettingsStore
@@ -101,14 +101,13 @@ class StatsViewModel(
             }
         }
         viewModelScope.launch {
-            modelUsageDao.observeUsageRecords()
-                .map { records ->
-                    ModelUsageAggregate(
-                        distribution = buildModelUsageDistribution(records),
-                        callTrend = buildModelCallTrend(records),
-                        promptTokens = records.sumOf { record -> record.promptTokens },
-                        completionTokens = records.sumOf { record -> record.completionTokens },
-                        estimatedCount = records.count { record -> record.isEstimated }
+            modelUsageDao.observeHourlyUsageByModel(
+                maxHoursMillis = HOURS_IN_DISTRIBUTION * ONE_HOUR_MILLIS
+            )
+                .map { hourlyRecords ->
+                    HourlyAggregate(
+                        distribution = buildModelUsageDistribution(hourlyRecords),
+                        callTrend = buildModelCallTrend(hourlyRecords)
                     )
                 }
                 .flowOn(Dispatchers.Default)
@@ -116,13 +115,21 @@ class StatsViewModel(
                     _uiState.update {
                         it.copy(
                             modelUsageDistribution = aggregate.distribution,
-                            modelCallTrend = aggregate.callTrend,
-                            totalPromptTokens = aggregate.promptTokens,
-                            totalCompletionTokens = aggregate.completionTokens,
-                            estimatedModelUsageCount = aggregate.estimatedCount
+                            modelCallTrend = aggregate.callTrend
                         )
                     }
                 }
+        }
+        viewModelScope.launch {
+            modelUsageDao.observeTokenSummary().collect { summary ->
+                _uiState.update {
+                    it.copy(
+                        totalPromptTokens = summary.totalPromptTokens,
+                        totalCompletionTokens = summary.totalCompletionTokens,
+                        estimatedModelUsageCount = summary.estimatedCount
+                    )
+                }
+            }
         }
     }
 
@@ -195,25 +202,26 @@ class StatsViewModel(
         }
     }
 
-    private fun buildModelUsageDistribution(records: List<ModelUsageEntity>): List<StackedUsageBucket> {
-        return buildModelBuckets(records, amountSelector = { it.usageAmount() })
+    private fun buildModelUsageDistribution(records: List<HourlyModelUsage>): List<StackedUsageBucket> {
+        return buildModelBuckets(records, amountSelector = { it.totalTokens.toLong().takeIf { t -> t > 0L } ?: 1L })
     }
 
-    private fun buildModelCallTrend(records: List<ModelUsageEntity>): List<StackedUsageBucket> {
-        return buildModelBuckets(records, amountSelector = { 1L })
+    private fun buildModelCallTrend(records: List<HourlyModelUsage>): List<StackedUsageBucket> {
+        return buildModelBuckets(records, amountSelector = { it.callCount.toLong() })
     }
 
     private fun buildModelBuckets(
-        records: List<ModelUsageEntity>,
-        amountSelector: (ModelUsageEntity) -> Long
+        records: List<HourlyModelUsage>,
+        amountSelector: (HourlyModelUsage) -> Long
     ): List<StackedUsageBucket> {
         val hourStarts = records
-            .map { it.createdAt.toHourStartMillis() }
+            .map { it.hourStart }
             .distinct()
             .sorted()
             .takeLast(HOURS_IN_DISTRIBUTION)
         if (hourStarts.isEmpty()) return emptyList()
-        val recentRecords = records.filter { it.createdAt.toHourStartMillis() in hourStarts }
+
+        val recentRecords = records.filter { it.hourStart in hourStarts }
         val topModels = recentRecords
             .groupBy { it.modelId }
             .mapValues { (_, items) -> items.sumOf(amountSelector) }
@@ -223,8 +231,7 @@ class StatsViewModel(
             .map { it.first }
 
         return hourStarts.map { start ->
-            val end = start + ONE_HOUR_MILLIS
-            val recordsInBucket = recentRecords.filter { it.createdAt >= start && it.createdAt < end }
+            val recordsInBucket = recentRecords.filter { it.hourStart == start }
             val grouped = recordsInBucket
                 .groupBy { record ->
                     if (record.modelId in topModels) record.modelId else "其他"
@@ -254,23 +261,13 @@ class StatsViewModel(
         }.timeInMillis
     }
 
-    // 纯 epoch 运算截断到整点，避免对每条记录都新建 Calendar；整点偏移时区下与本地结果一致。
-    private fun Long.toHourStartMillis(): Long = this - (this % ONE_HOUR_MILLIS)
-
     private fun dayFormat(): SimpleDateFormat = SimpleDateFormat("MM-dd", Locale.getDefault())
 
     private fun distributionFormat(): SimpleDateFormat = SimpleDateFormat("MM-dd HH:00", Locale.getDefault())
 
-    private fun ModelUsageEntity.usageAmount(): Long {
-        return totalTokens.toLong().takeIf { it > 0L } ?: 1L
-    }
-
-    private data class ModelUsageAggregate(
+    private data class HourlyAggregate(
         val distribution: List<StackedUsageBucket>,
-        val callTrend: List<StackedUsageBucket>,
-        val promptTokens: Int,
-        val completionTokens: Int,
-        val estimatedCount: Int
+        val callTrend: List<StackedUsageBucket>
     )
 
     private companion object {

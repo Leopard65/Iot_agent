@@ -3,6 +3,7 @@ package com.example.iotgpt.core.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -47,46 +49,56 @@ fun AppPage(
         .statusBarsPadding()
         .padding(horizontal = 14.dp, vertical = LotSpacing.xs)
 
-    Column(
-        modifier = if (scrollable) {
-            pageModifier.verticalScroll(rememberScrollState())
-        } else {
-            pageModifier
-        },
-        verticalArrangement = Arrangement.spacedBy(LotSpacing.md)
+    Box(
+        modifier = pageModifier,
+        contentAlignment = Alignment.TopCenter
     ) {
-        if (showHeader) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
+        Column(
+            modifier = if (scrollable) {
+                Modifier
+                    .widthIn(max = 960.dp)
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+            } else {
+                Modifier
+                    .widthIn(max = 960.dp)
+                    .fillMaxSize()
+            },
+            verticalArrangement = Arrangement.spacedBy(LotSpacing.md)
+        ) {
+            if (showHeader) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Top
                 ) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    if (subtitle.isNotBlank()) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
                         Text(
-                            text = subtitle,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 2,
+                            text = title,
+                            style = MaterialTheme.typography.headlineSmall,
+                            color = MaterialTheme.colorScheme.onBackground,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
+                        if (subtitle.isNotBlank()) {
+                            Text(
+                                text = subtitle,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
+                    trailing?.invoke()
                 }
-                trailing?.invoke()
             }
+            content()
         }
-        content()
     }
 }
 

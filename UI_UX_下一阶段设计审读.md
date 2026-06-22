@@ -21,12 +21,12 @@
 - 聊天页已完成多行 Composer、能力条、AI/Claw segmented control、通用 Prompt Deck 和 DeepSeek 风格历史抽屉分组。
 - 设置页已加入模型配置向导和当前模型概览，降低首次配置成本。
 - 统计页已加入自动洞察卡，并统一部分图表 palette。
-- `Claw` 已从隐藏能力变为底部导航顶层入口，新增本地能力面板，展示短信、拍照、下载和 App-Leap。
+- `Claw` 已从隐藏能力变为聊天页内的本地模式开关，并通过任务日志展示短信、拍照、下载和 App-Leap。
 - 已完成 `assembleDebug`、`testDebugUnitTest`、`connectedDebugAndroidTest` 回归验证。
 
 ## 当前 UI 优点
 
-- 主导航已经调整为“对话 / 智能体 / 统计 / 设置”，四个顶层页面都直接服务 AI 助手核心工作流。
+- 主导航已经收敛为“对话 / 统计 / 设置”，Claw 本地能力保留在聊天页内，整体信息架构更轻。
 - `AppPage`、`AppSectionCard`、`StatusPill` 已经形成基础设计组件，便于下一阶段抽出统一设计 token。
 - 聊天页已有 DeepSeek 风格的历史抽屉雏形，支持搜索、重命名、删除和 Claw 日志切换。
 - 统计页已具备图表、模型调用、网络状态和任务统计，满足原始评分项中“统计与监测页面”的主体要求。
@@ -40,7 +40,7 @@
 
 - `ChatScreen.kt` 中 Claw 使用 `Color(0xFF39FF88)`。
 - `StatsScreen.kt` 图表网格和 palette 使用多组硬编码颜色。
-- `AgentScreen.kt` 仍有终端绿、雷达蓝等独立色值。
+- Claw 相关状态色已集中到 `LotDesignTokens.kt`，后续重点是继续减少聊天页和统计页中的零散硬编码色值。
 
 建议新增 `ui/theme/LotDesignTokens.kt`：
 

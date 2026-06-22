@@ -25,8 +25,13 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 
 /**
@@ -44,16 +49,36 @@ class ChatRepositoryImpl(
     private val messageDao = database.messageDao()
     private val modelUsageDao = database.modelUsageDao()
 
+    private val _visibleMessageLimit = MutableStateFlow(INITIAL_MESSAGE_PAGE)
+    override val visibleMessageLimit: StateFlow<Int> = _visibleMessageLimit
+
     override fun observeConversations(): Flow<List<ConversationEntity>> {
         return conversationDao.observeConversations()
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     override fun observeMessages(conversationId: String?): Flow<List<MessageEntity>> {
-        return if (conversationId == null) {
-            flowOf(emptyList())
-        } else {
-            messageDao.observeMessages(conversationId)
+        if (conversationId == null) return flowOf(emptyList())
+        return _visibleMessageLimit.flatMapLatest { limit ->
+            messageDao.observeLatestMessages(conversationId, limit)
         }
+    }
+
+    override fun observeMessageCount(conversationId: String?): Flow<Int> {
+        if (conversationId == null) return flowOf(0)
+        return messageDao.observeMessageCountForConversation(conversationId)
+    }
+
+    override suspend fun loadOlderMessages(conversationId: String) {
+        val current = _visibleMessageLimit.value
+        val total = messageDao.getMessageCount(conversationId)
+        if (current < total) {
+            _visibleMessageLimit.value = (current + OLDER_MESSAGE_PAGE).coerceAtMost(total)
+        }
+    }
+
+    override suspend fun resetMessagePagination() {
+        _visibleMessageLimit.value = INITIAL_MESSAGE_PAGE
     }
 
     override suspend fun createConversation(): ConversationEntity {
@@ -83,6 +108,16 @@ class ChatRepositoryImpl(
             id = id,
             title = trimmed.take(48),
             updatedAt = System.currentTimeMillis()
+        )
+    }
+
+    override suspend fun exportConversationMarkdown(conversationId: String): ConversationMarkdownExport {
+        val conversation = conversationDao.getConversation(conversationId)
+            ?: throw IllegalStateException("找不到当前会话")
+        val messages = messageDao.getMessages(conversationId)
+        return ConversationMarkdownExport(
+            fileName = ConversationMarkdownExporter.fileName(conversation),
+            markdown = ConversationMarkdownExporter.export(conversation, messages)
         )
     }
 
@@ -263,16 +298,18 @@ class ChatRepositoryImpl(
         // 摘要是一次额外的 LLM 调用，改为后台 fire-and-forget，不阻塞用户当前发送流程；
         // 生成完成后再回填会话摘要。
         summaryScope.launch {
-            val summary = maybeGenerateSummaryIfNeeded(
-                messages = finalMessages,
-                settings = settings
-            ) ?: return@launch
-            refreshConversationMeta(
-                conversationId = conversationId,
-                messages = messageDao.getMessages(conversationId),
-                updatedAt = System.currentTimeMillis(),
-                summaryOverride = summary
-            )
+            withTimeoutOrNull(SUMMARY_TIMEOUT_MS) {
+                val summary = maybeGenerateSummaryIfNeeded(
+                    messages = finalMessages,
+                    settings = settings
+                ) ?: return@withTimeoutOrNull
+                refreshConversationMeta(
+                    conversationId = conversationId,
+                    messages = messageDao.getMessages(conversationId),
+                    updatedAt = System.currentTimeMillis(),
+                    summaryOverride = summary
+                )
+            }
         }
 
         return conversationId
@@ -290,7 +327,7 @@ class ChatRepositoryImpl(
         val eligibleMessages = messages
             .filter { (it.role == "user" || it.role == "assistant") && !it.isStreaming }
             .filter { it.content.isNotBlank() }
-        val requestMessages = selectContextWindow(eligibleMessages)
+        val requestMessages = ContextWindowSelector.select(eligibleMessages)
             .map { it.toLlmChatMessage(settings) }
 
         val streamedContent = StringBuilder()
@@ -508,26 +545,8 @@ class ChatRepositoryImpl(
             .ifBlank { "本地会话" }
     }
 
-    /**
-     * Picks the most recent eligible messages that fit within the token budget, walking from
-     * newest to oldest. Always keeps at least one message and never exceeds the hard message cap;
-     * prefers each message's persisted tokenCount, falling back to a length-based estimate.
-     */
-    private fun selectContextWindow(eligible: List<MessageEntity>): List<MessageEntity> {
-        val selected = ArrayList<MessageEntity>()
-        var usedTokens = 0
-        for (message in eligible.asReversed()) {
-            if (selected.size >= MAX_CONTEXT_MESSAGES) break
-            val tokens = message.tokenCount ?: estimateTokenCount(message.content)
-            if (selected.isNotEmpty() && usedTokens + tokens > MAX_CONTEXT_TOKENS) break
-            usedTokens += tokens
-            selected.add(message)
-        }
-        return selected.asReversed()
-    }
-
     private fun estimateTokenCount(content: String): Int {
-        return (content.length / 2).coerceAtLeast(1)
+        return ContextWindowSelector.estimateTokenCount(content)
     }
 
     private suspend fun MessageEntity.toLlmChatMessage(settings: LlmSettings): LlmChatMessage {
@@ -606,9 +625,10 @@ class ChatRepositoryImpl(
     }
 
     private companion object {
-        const val MAX_CONTEXT_MESSAGES = 40
-        const val MAX_CONTEXT_TOKENS = 3000
         const val MAX_SUMMARY_MESSAGES = 12
         const val STREAM_UPDATE_INTERVAL_MS = 48L
+        const val SUMMARY_TIMEOUT_MS = 10_000L
+        const val INITIAL_MESSAGE_PAGE = 50
+        const val OLDER_MESSAGE_PAGE = 30
     }
 }

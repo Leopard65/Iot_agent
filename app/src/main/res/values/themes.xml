@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.Lot" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.Lot" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/lot_splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="windowSplashScreenIconBackgroundColor">@color/lot_splash_icon_background</item>
+        <item name="postSplashScreenTheme">@style/Theme.Lot.App</item>
+    </style>
+
+    <style name="Theme.Lot.App" parent="android:Theme.Material.Light.NoActionBar" />
 </resources>

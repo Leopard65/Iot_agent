@@ -23,6 +23,18 @@ interface MessageDao {
 
     @Query(
         """
+        SELECT * FROM (
+            SELECT * FROM messages
+            WHERE conversationId = :conversationId
+            ORDER BY createdAt DESC
+            LIMIT :limit
+        ) ORDER BY createdAt ASC
+        """
+    )
+    fun observeLatestMessages(conversationId: String, limit: Int): Flow<List<MessageEntity>>
+
+    @Query(
+        """
         SELECT * FROM messages
         WHERE conversationId = :conversationId
         ORDER BY createdAt ASC
@@ -56,6 +68,9 @@ interface MessageDao {
 
     @Query("SELECT COUNT(*) FROM messages")
     fun observeMessageCount(): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM messages WHERE conversationId = :conversationId")
+    fun observeMessageCountForConversation(conversationId: String): Flow<Int>
 
     @Query("SELECT COUNT(*) FROM messages WHERE conversationId = :conversationId")
     suspend fun getMessageCount(conversationId: String): Int

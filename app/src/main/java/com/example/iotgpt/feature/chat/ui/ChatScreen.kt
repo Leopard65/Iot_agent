@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.SystemClock
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -47,6 +48,8 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -104,6 +107,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.iotgpt.core.components.AppPage
 import com.example.iotgpt.core.components.AppSectionCard
@@ -126,6 +130,7 @@ import com.example.iotgpt.ui.theme.LotMotion
 import com.example.iotgpt.ui.theme.LotRadius
 import com.example.iotgpt.ui.theme.LotSpacing
 import com.example.iotgpt.ui.theme.rememberReduceMotion
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -163,6 +168,29 @@ fun ChatScreen(
             conversationFade.animateTo(1f, animationSpec = tween(LotMotion.normal))
         }
     }
+    LaunchedEffect(uiState.pendingExport) {
+        val export = uiState.pendingExport ?: return@LaunchedEffect
+        runCatching {
+            val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
+            val exportFile = File(exportDir, export.fileName)
+            exportFile.writeText(export.markdown, Charsets.UTF_8)
+            val uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                exportFile
+            )
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/markdown"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_SUBJECT, export.fileName.removeSuffix(".md"))
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(Intent.createChooser(shareIntent, "导出对话"))
+        }.onFailure { error ->
+            viewModel.showError("导出失败：${error.message ?: "无法打开分享面板"}")
+        }
+        viewModel.consumePendingExport()
+    }
     var draft by rememberSaveable { mutableStateOf("") }
     var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
     var pendingClawCapture by remember { mutableStateOf<CapturedFile?>(null) }
@@ -173,31 +201,32 @@ fun ChatScreen(
     var showClawSmsConfirm by rememberSaveable { mutableStateOf(false) }
     var pendingAttachment by remember { mutableStateOf<PendingAttachment?>(null) }
     var attachmentMenuExpanded by rememberSaveable { mutableStateOf(false) }
+    var activeClawPanelMode by rememberSaveable { mutableStateOf<ClawPanelMode?>(null) }
+    var clawDownloadInput by rememberSaveable { mutableStateOf("") }
+    var clawSmsPhoneInput by rememberSaveable { mutableStateOf("") }
+    var clawSmsContentInput by rememberSaveable { mutableStateOf("") }
+    var clawAppLeapInput by rememberSaveable { mutableStateOf("") }
     var showRecordingPanel by rememberSaveable { mutableStateOf(false) }
     var recordingStartDelaySeconds by rememberSaveable { mutableIntStateOf(0) }
     var recordingMaxDurationSeconds by rememberSaveable { mutableIntStateOf(30) }
     var recordingCountdownSeconds by rememberSaveable { mutableIntStateOf(0) }
     var recordingElapsedSeconds by rememberSaveable { mutableIntStateOf(0) }
+    var recordingCountdownEndsAtMillis by rememberSaveable { mutableStateOf<Long?>(null) }
+    var recordingStartedAtMillis by rememberSaveable { mutableStateOf<Long?>(null) }
     var pendingRecordingStart by rememberSaveable { mutableStateOf(false) }
-    var visibleMessageCount by rememberSaveable(uiState.currentConversationId) {
-        mutableIntStateOf(10)
-    }
-    var isLoadingOlderMessages by rememberSaveable(uiState.currentConversationId) {
-        mutableStateOf(false)
-    }
     var isRecording by rememberSaveable { mutableStateOf(false) }
     var notificationPromptDismissed by rememberSaveable { mutableStateOf(false) }
     var followLatest by rememberSaveable(uiState.currentConversationId) { mutableStateOf(false) }
     var followRequiresSaving by rememberSaveable(uiState.currentConversationId) { mutableStateOf(false) }
     var followSawSaving by rememberSaveable(uiState.currentConversationId) { mutableStateOf(false) }
     var followStartMessageCount by rememberSaveable(uiState.currentConversationId) { mutableIntStateOf(0) }
-    val visibleMessages = uiState.messages.takeLast(visibleMessageCount)
+    val visibleMessages = uiState.messages
 
     DisposableEffect(Unit) {
         onDispose { audioRecorder.cancel() }
     }
 
-    LaunchedEffect(followLatest, visibleMessages.size, uiState.messages.size, uiState.isSaving) {
+    LaunchedEffect(followLatest, visibleMessages.size, uiState.isSaving) {
         if (!followLatest) return@LaunchedEffect
         if (visibleMessages.isNotEmpty()) {
             messageListState.scrollToItem(0)
@@ -395,7 +424,9 @@ fun ChatScreen(
             audioRecorder.start()
             isRecording = true
             recordingCountdownSeconds = 0
+            recordingCountdownEndsAtMillis = null
             recordingElapsedSeconds = 0
+            recordingStartedAtMillis = SystemClock.elapsedRealtime()
             showRecordingPanel = true
         }.onFailure {
             val message = "录音启动失败：${it.message ?: "请检查麦克风权限"}"
@@ -421,6 +452,8 @@ fun ChatScreen(
                 pendingRecordingStart = false
                 if (recordingStartDelaySeconds > 0) {
                     recordingCountdownSeconds = recordingStartDelaySeconds
+                    recordingCountdownEndsAtMillis = SystemClock.elapsedRealtime() +
+                        recordingStartDelaySeconds * ONE_SECOND_MILLIS
                 } else {
                     beginRecording()
                 }
@@ -504,6 +537,7 @@ fun ChatScreen(
             if (!keep) {
                 showRecordingPanel = false
                 recordingCountdownSeconds = 0
+                recordingCountdownEndsAtMillis = null
                 if (pendingClawAudioRequest) {
                     pendingClawAudioRequest = false
                     viewModel.logClawCommand(
@@ -522,6 +556,8 @@ fun ChatScreen(
             isRecording = false
             showRecordingPanel = false
             recordingElapsedSeconds = 0
+            recordingStartedAtMillis = null
+            recordingCountdownEndsAtMillis = null
             if (uri != null) {
                 scope.launch {
                     val prepared = prepareAttachment("audio", uri)
@@ -563,6 +599,8 @@ fun ChatScreen(
             showRecordingPanel = false
             recordingElapsedSeconds = 0
             recordingCountdownSeconds = 0
+            recordingStartedAtMillis = null
+            recordingCountdownEndsAtMillis = null
             if (pendingClawAudioRequest) {
                 pendingClawAudioRequest = false
                 viewModel.logClawCommand(
@@ -582,6 +620,8 @@ fun ChatScreen(
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
             if (recordingStartDelaySeconds > 0) {
                 recordingCountdownSeconds = recordingStartDelaySeconds
+                recordingCountdownEndsAtMillis = SystemClock.elapsedRealtime() +
+                    recordingStartDelaySeconds * ONE_SECOND_MILLIS
             } else {
                 beginRecording()
             }
@@ -591,23 +631,42 @@ fun ChatScreen(
         }
     }
 
-    LaunchedEffect(recordingCountdownSeconds, isRecording) {
+    LaunchedEffect(recordingCountdownEndsAtMillis, isRecording) {
         if (recordingCountdownSeconds <= 0 || isRecording) return@LaunchedEffect
-        delay(1000)
-        val next = recordingCountdownSeconds - 1
-        recordingCountdownSeconds = next
-        if (next == 0) {
+        val endsAt = recordingCountdownEndsAtMillis
+            ?: (SystemClock.elapsedRealtime() + recordingCountdownSeconds * ONE_SECOND_MILLIS)
+                .also { recordingCountdownEndsAtMillis = it }
+        while (recordingCountdownSeconds > 0 && !isRecording) {
+            delay(200)
+            val remainingMillis = (endsAt - SystemClock.elapsedRealtime()).coerceAtLeast(0L)
+            val next = ((remainingMillis + ONE_SECOND_MILLIS - 1L) / ONE_SECOND_MILLIS).toInt()
+            if (recordingCountdownSeconds != next) {
+                recordingCountdownSeconds = next
+            }
+        }
+        if (!isRecording) {
+            recordingCountdownEndsAtMillis = null
             beginRecording()
         }
     }
 
-    LaunchedEffect(isRecording, recordingElapsedSeconds, recordingMaxDurationSeconds) {
+    LaunchedEffect(isRecording, recordingMaxDurationSeconds) {
         if (!isRecording) return@LaunchedEffect
-        delay(1000)
-        val next = recordingElapsedSeconds + 1
-        recordingElapsedSeconds = next
-        if (next >= recordingMaxDurationSeconds) {
-            stopRecording(keep = true)
+        val startedAt = recordingStartedAtMillis
+            ?: SystemClock.elapsedRealtime().also { recordingStartedAtMillis = it }
+        while (isRecording) {
+            delay(250)
+            val elapsed = ((SystemClock.elapsedRealtime() - startedAt) / ONE_SECOND_MILLIS)
+                .toInt()
+                .coerceAtLeast(0)
+                .coerceAtMost(recordingMaxDurationSeconds)
+            if (recordingElapsedSeconds != elapsed) {
+                recordingElapsedSeconds = elapsed
+            }
+            if (elapsed >= recordingMaxDurationSeconds) {
+                stopRecording(keep = true)
+                break
+            }
         }
     }
 
@@ -706,6 +765,13 @@ fun ChatScreen(
                 )
             }
         }
+    }
+
+    fun runClawPanelCommand(commandText: String) {
+        if (commandText.isBlank()) return
+        beginFollowLatest(requiresSaving = false)
+        handleClawCommand(commandText.trim())
+        activeClawPanelMode = null
     }
 
     fun submitMessage() {
@@ -869,6 +935,14 @@ fun ChatScreen(
                         onCheckedChange = viewModel::updateActiveReasoningEnabled
                     )
                 }
+                TextButton(
+                    enabled = uiState.currentConversationId != null &&
+                        uiState.messages.isNotEmpty() &&
+                        !uiState.isExporting,
+                    onClick = viewModel::exportCurrentConversation
+                ) {
+                    Text(if (uiState.isExporting) "导出中" else "导出")
+                }
                 TextButton(onClick = viewModel::createConversation) {
                     Text("新建")
                 }
@@ -963,29 +1037,18 @@ fun ChatScreen(
                             )
                         }
                     }
-                    if (visibleMessages.size < uiState.messages.size) {
+                    if (uiState.hasOlderMessages) {
                         item(key = "load-older-messages") {
-                            LaunchedEffect(visibleMessages.size, uiState.messages.size) {
-                                if (!isLoadingOlderMessages) {
-                                    isLoadingOlderMessages = true
-                                    delay(450)
-                                    visibleMessageCount = (visibleMessageCount + 10)
-                                        .coerceAtMost(uiState.messages.size)
-                                    isLoadingOlderMessages = false
-                                }
-                            }
-                            Column(
+                            TextButton(
+                                onClick = { viewModel.loadOlderMessages() },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 8.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
+                                    .padding(vertical = 4.dp)
+                                    .testTag(AppTestTags.LOAD_OLDER_MESSAGES)
                             ) {
-                                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                                 Text(
-                                    text = "正在加载更早消息...",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    text = "加载更早消息",
+                                    style = MaterialTheme.typography.labelLarge
                                 )
                             }
                         }
@@ -1038,6 +1101,65 @@ fun ChatScreen(
                     modelLabel = uiState.activeModelProfile?.model ?: "未配置模型",
                     reasoningEnabled = uiState.activeModelProfile?.reasoningEnabled == true
                 )
+                AnimatedVisibility(
+                    visible = uiState.isClawMode && attachmentMenuExpanded,
+                    enter = if (reduceMotion) EnterTransition.None else expandVertically(animationSpec = tween(LotMotion.normal)) + fadeIn(animationSpec = tween(LotMotion.normal)),
+                    exit = if (reduceMotion) ExitTransition.None else shrinkVertically(animationSpec = tween(LotMotion.fast)) + fadeOut(animationSpec = tween(LotMotion.fast))
+                ) {
+                    ClawToolPanel(
+                        activeMode = activeClawPanelMode,
+                        downloadInput = clawDownloadInput,
+                        smsPhoneInput = clawSmsPhoneInput,
+                        smsContentInput = clawSmsContentInput,
+                        appLeapInput = clawAppLeapInput,
+                        onDownloadInputChange = { clawDownloadInput = it },
+                        onSmsPhoneChange = { clawSmsPhoneInput = it },
+                        onSmsContentChange = { clawSmsContentInput = it },
+                        onAppLeapInputChange = { clawAppLeapInput = it },
+                        onModeSelected = { activeClawPanelMode = it },
+                        onPhoto = {
+                            attachmentMenuExpanded = false
+                            activeClawPanelMode = null
+                            runClawPanelCommand("拍照")
+                        },
+                        onDocument = {
+                            attachmentMenuExpanded = false
+                            activeClawPanelMode = null
+                            runClawPanelCommand("选择文档")
+                        },
+                        onAudio = {
+                            attachmentMenuExpanded = false
+                            activeClawPanelMode = null
+                            runClawPanelCommand("录音")
+                        },
+                        onDownloadSubmit = {
+                            val command = "下载 $clawDownloadInput"
+                            clawDownloadInput = ""
+                            attachmentMenuExpanded = false
+                            runClawPanelCommand(command)
+                        },
+                        onSmsSubmit = {
+                            val command = buildString {
+                                append("短信 ")
+                                append(clawSmsPhoneInput)
+                                if (clawSmsContentInput.isNotBlank()) {
+                                    append(' ')
+                                    append(clawSmsContentInput)
+                                }
+                            }
+                            clawSmsPhoneInput = ""
+                            clawSmsContentInput = ""
+                            attachmentMenuExpanded = false
+                            runClawPanelCommand(command)
+                        },
+                        onAppLeapSubmit = {
+                            val command = clawAppLeapInput
+                            clawAppLeapInput = ""
+                            attachmentMenuExpanded = false
+                            runClawPanelCommand(command)
+                        }
+                    )
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1075,50 +1197,63 @@ fun ChatScreen(
                             modifier = Modifier
                                 .size(48.dp)
                                 .testTag(AppTestTags.CHAT_ATTACH_MENU)
-                                .semantics { contentDescription = "添加附件" }
+                                .semantics {
+                                    contentDescription = if (uiState.isClawMode) {
+                                        "打开 Claw 模块"
+                                    } else {
+                                        "添加附件"
+                                    }
+                                }
                                 .clip(RoundedCornerShape(LotRadius.lg))
                                 .background(MaterialTheme.colorScheme.surfaceVariant),
-                            onClick = { attachmentMenuExpanded = true }
+                            onClick = {
+                                attachmentMenuExpanded = !attachmentMenuExpanded
+                                if (!attachmentMenuExpanded) {
+                                    activeClawPanelMode = null
+                                }
+                            }
                         ) {
                             ComposerAttachmentIcon(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        DropdownMenu(
-                            expanded = attachmentMenuExpanded,
-                            onDismissRequest = { attachmentMenuExpanded = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("拍照") },
-                                onClick = {
-                                    attachmentMenuExpanded = false
-                                    requestCamera()
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("文档") },
-                                onClick = {
-                                    attachmentMenuExpanded = false
-                                    launchDocumentSelection()
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("录音") },
-                                onClick = {
-                                    attachmentMenuExpanded = false
-                                    showRecordingPanel = true
-                                }
-                            )
-                            if (uiState.messages.any { it.role == "user" }) {
-                                HorizontalDivider()
+                        if (!uiState.isClawMode) {
+                            DropdownMenu(
+                                expanded = attachmentMenuExpanded,
+                                onDismissRequest = { attachmentMenuExpanded = false }
+                            ) {
                                 DropdownMenuItem(
-                                    text = { Text("重新生成上条") },
-                                    enabled = !uiState.isSaving,
+                                    text = { Text("拍照") },
                                     onClick = {
                                         attachmentMenuExpanded = false
-                                        viewModel.regenerateLastAssistant()
+                                        requestCamera()
                                     }
                                 )
+                                DropdownMenuItem(
+                                    text = { Text("文档") },
+                                    onClick = {
+                                        attachmentMenuExpanded = false
+                                        launchDocumentSelection()
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("录音") },
+                                    onClick = {
+                                        attachmentMenuExpanded = false
+                                        showRecordingPanel = true
+                                    }
+                                )
+                                if (uiState.messages.any { it.role == "user" }) {
+                                    HorizontalDivider()
+                                    DropdownMenuItem(
+                                        text = { Text("重新生成上条") },
+                                        enabled = !uiState.isSaving,
+                                        onClick = {
+                                            attachmentMenuExpanded = false
+                                            viewModel.regenerateLastAssistant()
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
@@ -1193,338 +1328,7 @@ private data class ClawSmsCommand(
     val content: String
 )
 
-@Composable
-private fun ChatComposerCapabilityBar(
-    isClawMode: Boolean,
-    isSaving: Boolean,
-    modelLabel: String,
-    reasoningEnabled: Boolean
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(LotSpacing.sm),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        StatusPill(
-            text = if (isClawMode) "Claw 本地" else "AI 对话",
-            tone = if (isClawMode) StatusTone.Success else StatusTone.Primary
-        )
-        Text(
-            text = modelLabel,
-            modifier = Modifier
-                .weight(1f)
-                .clip(RoundedCornerShape(LotRadius.md))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-                .padding(horizontal = 10.dp, vertical = 6.dp),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-        if (reasoningEnabled) {
-            StatusPill(text = "思考", tone = StatusTone.Neutral)
-        }
-        if (isSaving) {
-            StatusPill(text = "生成中", tone = StatusTone.Primary)
-        }
-    }
-}
-
-private enum class ComposerAction {
-    Send,
-    Execute,
-    Stop
-}
-
-@Composable
-private fun ComposerAttachmentIcon(
-    color: Color
-) {
-    Canvas(modifier = Modifier.size(22.dp)) {
-        val stroke = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
-        drawRoundRect(
-            color = color,
-            topLeft = Offset(size.width * 0.20f, size.height * 0.24f),
-            size = Size(size.width * 0.60f, size.height * 0.52f),
-            style = stroke
-        )
-        drawLine(
-            color = color,
-            start = Offset(size.width * 0.50f, size.height * 0.34f),
-            end = Offset(size.width * 0.50f, size.height * 0.66f),
-            strokeWidth = stroke.width,
-            cap = StrokeCap.Round
-        )
-        drawLine(
-            color = color,
-            start = Offset(size.width * 0.34f, size.height * 0.50f),
-            end = Offset(size.width * 0.66f, size.height * 0.50f),
-            strokeWidth = stroke.width,
-            cap = StrokeCap.Round
-        )
-    }
-}
-
-@Composable
-private fun ComposerActionIcon(
-    action: ComposerAction,
-    color: Color
-) {
-    Canvas(modifier = Modifier.size(22.dp)) {
-        val stroke = Stroke(width = 2.2.dp.toPx(), cap = StrokeCap.Round)
-        when (action) {
-            ComposerAction.Send -> {
-                drawLine(
-                    color = color,
-                    start = Offset(size.width * 0.22f, size.height * 0.50f),
-                    end = Offset(size.width * 0.78f, size.height * 0.50f),
-                    strokeWidth = stroke.width,
-                    cap = StrokeCap.Round
-                )
-                drawLine(
-                    color = color,
-                    start = Offset(size.width * 0.58f, size.height * 0.30f),
-                    end = Offset(size.width * 0.78f, size.height * 0.50f),
-                    strokeWidth = stroke.width,
-                    cap = StrokeCap.Round
-                )
-                drawLine(
-                    color = color,
-                    start = Offset(size.width * 0.58f, size.height * 0.70f),
-                    end = Offset(size.width * 0.78f, size.height * 0.50f),
-                    strokeWidth = stroke.width,
-                    cap = StrokeCap.Round
-                )
-            }
-            ComposerAction.Execute -> {
-                drawLine(color, Offset(size.width * 0.58f, size.height * 0.12f), Offset(size.width * 0.34f, size.height * 0.52f), stroke.width, cap = StrokeCap.Round)
-                drawLine(color, Offset(size.width * 0.34f, size.height * 0.52f), Offset(size.width * 0.52f, size.height * 0.52f), stroke.width, cap = StrokeCap.Round)
-                drawLine(color, Offset(size.width * 0.52f, size.height * 0.52f), Offset(size.width * 0.42f, size.height * 0.88f), stroke.width, cap = StrokeCap.Round)
-                drawLine(color, Offset(size.width * 0.42f, size.height * 0.88f), Offset(size.width * 0.72f, size.height * 0.42f), stroke.width, cap = StrokeCap.Round)
-            }
-            ComposerAction.Stop -> {
-                drawRoundRect(
-                    color = color,
-                    topLeft = Offset(size.width * 0.28f, size.height * 0.28f),
-                    size = Size(size.width * 0.44f, size.height * 0.44f),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx(), 3.dp.toPx())
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ThinkingIndicator(
-    modelLabel: String,
-    reduceMotion: Boolean,
-    modifier: Modifier = Modifier
-) {
-    val dotColor = MaterialTheme.colorScheme.primary
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        if (reduceMotion) {
-            repeat(3) {
-                Box(
-                    modifier = Modifier
-                        .size(7.dp)
-                        .clip(CircleShape)
-                        .background(dotColor.copy(alpha = 0.7f))
-                )
-            }
-        } else {
-            val transition = rememberInfiniteTransition(label = "thinking")
-            repeat(3) { index ->
-                val alpha by transition.animateFloat(
-                    initialValue = 0.3f,
-                    targetValue = 1f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(600, easing = FastOutSlowInEasing),
-                        repeatMode = RepeatMode.Reverse,
-                        initialStartOffset = StartOffset(index * 160)
-                    ),
-                    label = "thinking-dot-$index"
-                )
-                Box(
-                    modifier = Modifier
-                        .size(7.dp)
-                        .clip(CircleShape)
-                        .background(dotColor.copy(alpha = alpha))
-                )
-            }
-        }
-        Text(
-            text = "$modelLabel · 思考中",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-    }
-}
-
-private fun documentMimeTypes(): Array<String> {
-    return arrayOf(
-        "text/plain",
-        "text/markdown",
-        "text/csv",
-        "application/json",
-        "application/xml",
-        "application/pdf",
-        "application/msword",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "*/*"
-    )
-}
-
-@Composable
-private fun RecordingControlCard(
-    startDelaySeconds: Int,
-    maxDurationSeconds: Int,
-    countdownSeconds: Int,
-    elapsedSeconds: Int,
-    isRecording: Boolean,
-    onStartDelaySelected: (Int) -> Unit,
-    onDurationSelected: (Int) -> Unit,
-    onStart: () -> Unit,
-    onStopAndKeep: () -> Unit,
-    onCancel: () -> Unit
-) {
-    val isWaiting = countdownSeconds > 0 && !isRecording
-    val status = when {
-        isRecording -> "录音中 ${formatDuration(elapsedSeconds)} / ${formatDuration(maxDurationSeconds)}"
-        isWaiting -> "${countdownSeconds} 秒后开始录音"
-        else -> "准备录音，结束后会生成待发送附件"
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag(AppTestTags.CHAT_RECORDING_PANEL)
-            .background(
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                shape = RoundedCornerShape(LotRadius.md)
-            )
-            .padding(10.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    text = "录音控制",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    text = status,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            if (isRecording) {
-                StatusPill("REC", tone = StatusTone.Success)
-            }
-        }
-
-        LinearProgressIndicator(
-            progress = {
-                if (isRecording) {
-                    elapsedSeconds.toFloat() / maxDurationSeconds.toFloat()
-                } else {
-                    0f
-                }
-            },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        ChoiceRow(
-            label = "多久开始",
-            choices = listOf(0, 3, 5, 10),
-            selected = startDelaySeconds,
-            enabled = !isRecording && !isWaiting,
-            formatter = { if (it == 0) "立即" else "${it}s" },
-            onSelected = onStartDelaySelected
-        )
-        ChoiceRow(
-            label = "多久结束",
-            choices = listOf(10, 30, 60, 120),
-            selected = maxDurationSeconds,
-            enabled = !isRecording && !isWaiting,
-            formatter = { "${it}s" },
-            onSelected = onDurationSelected
-        )
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (isRecording || isWaiting) {
-                Button(
-                    modifier = Modifier.testTag(AppTestTags.CHAT_RECORDING_STOP_KEEP),
-                    onClick = onStopAndKeep,
-                    enabled = isRecording
-                ) {
-                    Text("结束并保留")
-                }
-                TextButton(onClick = onCancel) {
-                    Text("取消")
-                }
-            } else {
-                Button(
-                    modifier = Modifier.testTag(AppTestTags.CHAT_RECORDING_START),
-                    onClick = onStart
-                ) {
-                    Text("开始")
-                }
-                TextButton(onClick = onCancel) {
-                    Text("返回")
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ChoiceRow(
-    label: String,
-    choices: List<Int>,
-    selected: Int,
-    enabled: Boolean,
-    formatter: (Int) -> String,
-    onSelected: (Int) -> Unit
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            choices.forEach { choice ->
-                FilterChip(
-                    selected = selected == choice,
-                    enabled = enabled,
-                    onClick = { onSelected(choice) },
-                    label = { Text(formatter(choice)) }
-                )
-            }
-        }
-    }
-}
-
-private fun formatDuration(seconds: Int): String {
-    val minutes = seconds / 60
-    val remainingSeconds = seconds % 60
-    return "%02d:%02d".format(minutes, remainingSeconds)
-}
+private const val ONE_SECOND_MILLIS = 1_000L
 
 @Composable
 private fun ClawModeSwitch(
@@ -2276,318 +2080,6 @@ private fun HistoryActionIconButton(
 }
 
 @Composable
-private fun EmptyChatCard(
-    onExampleSelected: (String) -> Unit
-) {
-    val examples = listOf(
-        PromptExample("写作", "帮我润色一段自我介绍", "让表达更自然、清晰、有重点"),
-        PromptExample("学习", "把这段知识点讲明白", "用例子解释概念并整理重点"),
-        PromptExample("规划", "制定一周复习计划", "按时间、任务和优先级拆分"),
-        PromptExample("总结", "把这段资料整理成摘要", "提炼要点、结论和待办事项"),
-        PromptExample("生成", "写一封礼貌的邮件", "包含主题、正文和结束语"),
-        PromptExample("分析", "帮我比较两个方案", "列出优缺点、风险和建议")
-    )
-    AppSectionCard(
-        modifier = Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(12.dp)
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                text = "Prompt Deck",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            Text(
-                text = "选择一个常用场景，lot 会把它放进输入框继续完善。",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        examples.chunked(2).forEach { rowExamples ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                rowExamples.forEach { example ->
-                    PromptDeckItem(
-                        example = example,
-                        modifier = Modifier.weight(1f),
-                        onClick = { onExampleSelected(example.title) }
-                    )
-                }
-                if (rowExamples.size == 1) {
-                    Box(modifier = Modifier.weight(1f))
-                }
-            }
-        }
-    }
-}
-
-private data class PromptExample(
-    val category: String,
-    val title: String,
-    val description: String
-)
-
-@Composable
-private fun PromptDeckItem(
-    example: PromptExample,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit
-) {
-    val tint = when (example.category) {
-        "调试" -> MaterialTheme.colorScheme.secondary
-        "生成" -> MaterialTheme.colorScheme.tertiary
-        "分析" -> LotColors.Warning
-        else -> MaterialTheme.colorScheme.primary
-    }
-    Column(
-        modifier = modifier
-            .heightIn(min = 92.dp)
-            .clip(RoundedCornerShape(LotRadius.md))
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .border(
-                width = 1.dp,
-                color = tint.copy(alpha = 0.28f),
-                shape = RoundedCornerShape(LotRadius.md)
-            )
-            .clickable(onClick = onClick)
-            .padding(10.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        Text(
-            text = example.category,
-            modifier = Modifier
-                .clip(RoundedCornerShape(LotRadius.sm))
-                .background(tint.copy(alpha = 0.12f))
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-            style = MaterialTheme.typography.labelSmall,
-            color = tint,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-        Text(
-            text = example.title,
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
-        )
-        Text(
-            text = example.description,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
-        )
-    }
-}
-
-@Composable
-private fun MessageBubble(
-    message: MessageEntity,
-    showHeader: Boolean,
-    modelLabel: String,
-    reduceMotion: Boolean,
-    onCopy: (String) -> Unit,
-    onRetry: (String) -> Unit
-) {
-    val isUser = message.role == "user"
-    val isClaw = message.role == "claw"
-    val canRetry = !isUser &&
-        !isClaw &&
-        !message.isStreaming &&
-        isRetryableAssistantError(message.content)
-    val bubbleColor = when {
-        isUser -> MaterialTheme.colorScheme.primaryContainer
-        isClaw -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.74f)
-        canRetry -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f)
-        else -> MaterialTheme.colorScheme.surfaceContainerHigh
-    }
-    val outlineColor = when {
-        isUser -> MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
-        isClaw -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.24f)
-        canRetry -> MaterialTheme.colorScheme.error.copy(alpha = 0.55f)
-        else -> MaterialTheme.colorScheme.outline.copy(alpha = 0.30f)
-    }
-    val labelText = when {
-        isUser -> "用户"
-        isClaw -> "Claw 本地"
-        message.isStreaming -> "AI 助手 · 思考中"
-        canRetry -> "AI 助手 · 失败"
-        else -> "AI 助手"
-    }
-    val labelColor = when {
-        isUser -> MaterialTheme.colorScheme.onPrimaryContainer
-        isClaw -> MaterialTheme.colorScheme.onSecondaryContainer
-        canRetry -> MaterialTheme.colorScheme.error
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth(if (isUser) 0.80f else 0.86f)
-                .widthIn(max = 560.dp)
-                .background(
-                    color = bubbleColor,
-                    shape = RoundedCornerShape(LotRadius.md)
-                )
-                .border(1.dp, outlineColor, RoundedCornerShape(LotRadius.md))
-                .padding(horizontal = 12.dp, vertical = 10.dp)
-                .heightIn(min = 36.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            val displayHeader = showHeader || message.isStreaming || canRetry || isClaw
-            if (displayHeader) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = labelText,
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = labelColor,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = formatTime(message.createdAt),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = labelColor.copy(alpha = 0.64f)
-                    )
-                }
-            }
-            FileUtils.parseAttachmentJson(message.attachmentJson)?.let { attachment ->
-                AttachmentCard(attachment)
-            }
-            if (message.isStreaming) {
-                if (message.content.isBlank()) {
-                    ThinkingIndicator(modelLabel = modelLabel, reduceMotion = reduceMotion)
-                } else {
-                    MessageContent(message.content, onCopy)
-                    ThinkingIndicator(modelLabel = modelLabel, reduceMotion = reduceMotion)
-                }
-            } else {
-                MessageContent(message.content, onCopy)
-            }
-            if (!message.isStreaming && message.content.isNotBlank()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    TextButton(onClick = { onCopy(message.content) }) {
-                        Text("复制")
-                    }
-                    if (canRetry) {
-                        Spacer(modifier = Modifier.weight(1f))
-                        Button(
-                            onClick = { onRetry(message.id) },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.error,
-                                contentColor = MaterialTheme.colorScheme.onError
-                            ),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
-                        ) {
-                            Text("重试")
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-private fun isRetryableAssistantError(content: String): Boolean {
-    return content.startsWith("API") ||
-        content.startsWith("模型") ||
-        content.contains("请求失败")
-}
-
-@Composable
-private fun MessageContent(content: String, onCopy: (String) -> Unit) {
-    val parts = content.split("```")
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        parts.forEachIndexed { index, part ->
-            if (part.isBlank()) return@forEachIndexed
-            if (index % 2 == 1) {
-                CodeBlock(part, onCopy)
-            } else {
-                Text(
-                    text = part.trim(),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun CodeBlock(rawCode: String, onCopy: (String) -> Unit) {
-    val lines = rawCode.trim().lines()
-    val firstLine = lines.firstOrNull().orEmpty()
-    val hasLanguage = firstLine.matches(Regex("[A-Za-z0-9_+.#-]{1,24}")) && lines.size > 1
-    val language = if (hasLanguage) firstLine else "代码"
-    val code = if (hasLanguage) {
-        lines.drop(1).joinToString("\n")
-    } else {
-        rawCode.trim()
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                shape = RoundedCornerShape(LotRadius.md)
-            )
-            .padding(horizontal = 10.dp, vertical = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = language,
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.labelSmall,
-                fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            TextButton(
-                onClick = { onCopy(code) },
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-            ) {
-                Text("复制", style = MaterialTheme.typography.labelSmall)
-            }
-        }
-        Text(
-            text = code,
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            style = MaterialTheme.typography.bodySmall,
-            fontFamily = FontFamily.Monospace,
-            color = MaterialTheme.colorScheme.onSurface,
-            softWrap = false
-        )
-    }
-}
-
-@Composable
 private fun PendingAttachmentCard(
     attachment: PendingAttachment,
     onRemove: () -> Unit
@@ -2657,7 +2149,7 @@ private fun PendingAttachmentCard(
 }
 
 @Composable
-private fun AttachmentCard(attachment: AttachmentPreview) {
+internal fun AttachmentCard(attachment: AttachmentPreview) {
     val tint = attachmentTint(attachment.type)
     Column(
         modifier = Modifier
@@ -2724,7 +2216,7 @@ private fun AttachmentCard(attachment: AttachmentPreview) {
 }
 
 @Composable
-private fun attachmentTint(type: String): Color {
+internal fun attachmentTint(type: String): Color {
     return when (type) {
         "image" -> MaterialTheme.colorScheme.primary
         "audio" -> MaterialTheme.colorScheme.tertiary
@@ -2732,7 +2224,7 @@ private fun attachmentTint(type: String): Color {
     }
 }
 
-private fun attachmentLabel(type: String): String {
+internal fun attachmentLabel(type: String): String {
     return when (type) {
         "image" -> "图片附件"
         "audio" -> "录音附件"
@@ -2741,7 +2233,7 @@ private fun attachmentLabel(type: String): String {
 }
 
 @Composable
-private fun AttachmentTypeBadge(
+internal fun AttachmentTypeBadge(
     text: String,
     tint: Color,
     modifier: Modifier = Modifier
@@ -2758,7 +2250,7 @@ private fun AttachmentTypeBadge(
     )
 }
 
-private fun pendingAttachmentLabel(type: String): String {
+internal fun pendingAttachmentLabel(type: String): String {
     return when (type) {
         "image" -> "图片"
         "audio" -> "录音"
@@ -2766,16 +2258,12 @@ private fun pendingAttachmentLabel(type: String): String {
     }
 }
 
-private fun attachmentShortLabel(type: String): String {
+internal fun attachmentShortLabel(type: String): String {
     return when (type) {
         "image" -> "IMG"
         "audio" -> "AUD"
         else -> "DOC"
     }
-}
-
-private fun formatTime(timestamp: Long): String {
-    return SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(timestamp))
 }
 
 private fun shouldShowNotificationPrompt(context: Context): Boolean {

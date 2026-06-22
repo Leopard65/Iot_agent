@@ -289,17 +289,26 @@ class SettingsViewModel(
             _uiState.update { it.copy(isSaving = true, statusMessage = null) }
             runCatching {
                 val state = _uiState.value
-                require(state.profileName.isNotBlank()) { "请填写配置名称" }
                 require(state.baseUrl.isNotBlank()) { "请填写 Base URL" }
+                val trimmedBaseUrl = state.baseUrl.trim()
+                require(
+                    trimmedBaseUrl.startsWith("http://", ignoreCase = true) ||
+                        trimmedBaseUrl.startsWith("https://", ignoreCase = true)
+                ) { "Base URL 应以 http:// 或 https:// 开头" }
                 require(state.model.isNotBlank()) { "请填写模型名称" }
                 if (state.supportsAudioTranscription) {
                     require(state.transcriptionModel.isNotBlank()) { "请填写语音转写模型名称" }
                 }
+                // Friendly defaults for optional fields
+                val resolvedName = state.profileName.trim().ifBlank {
+                    state.model.trim().ifBlank { "自定义模型" }
+                }
+                val resolvedProvider = state.provider.trim().ifBlank { "Custom" }
                 val profile = ModelProfile(
                     id = state.editingProfileId ?: "profile-${UUID.randomUUID()}",
-                    name = state.profileName,
-                    provider = state.provider,
-                    baseUrl = state.baseUrl,
+                    name = resolvedName,
+                    provider = resolvedProvider,
+                    baseUrl = trimmedBaseUrl,
                     apiKey = state.apiKey,
                     model = state.model,
                     supportsVision = state.supportsVision,
@@ -309,6 +318,10 @@ class SettingsViewModel(
                     transcriptionModel = state.transcriptionModel
                 )
                 settingsStore.upsertModelProfile(profile, activate = true)
+                // Push resolved defaults back to UI state so the form reflects them
+                _uiState.update {
+                    it.copy(profileName = resolvedName, provider = resolvedProvider)
+                }
             }.onSuccess {
                 _uiState.update {
                     it.copy(isSaving = false, statusMessage = "模型配置已保存并设为当前")
